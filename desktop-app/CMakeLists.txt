@@ -35,7 +35,7 @@ juce_add_gui_app(SoundmanDesktop
 target_sources(SoundmanDesktop PRIVATE
     Source/Main.cpp
     # Core
-    # Source/Core/AudioEngine.cpp
+    Source/Core/AudioEngine.cpp
     # Source/Core/AudioDeviceManager.cpp
     # Source/Core/FileManager.cpp
 
@@ -46,9 +46,9 @@ target_sources(SoundmanDesktop PRIVATE
 
     # UI
     # Source/UI/MainComponent.cpp
-    # Source/UI/WaveformDisplay.cpp
+    Source/UI/WaveformDisplay.cpp
+    Source/UI/LevelMeter.cpp
     # Source/UI/SpectrumDisplay.cpp
-    # Source/UI/LevelMeterComponent.cpp
     # Source/UI/SettingsPanel.cpp
 
     # Data
