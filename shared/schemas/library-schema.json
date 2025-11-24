@@ -1,0 +1,175 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Soundman Library",
+  "description": "Schema for Soundman audio library metadata file",
+  "type": "object",
+  "required": ["version", "lastModified", "files"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "Semantic version of the library format"
+    },
+    "lastModified": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Last modification timestamp in ISO 8601 format"
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/audioFile"
+      },
+      "description": "Array of audio files in the library"
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "All unique tags used in the library"
+    },
+    "projects": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Array of project IDs"
+    }
+  },
+  "definitions": {
+    "audioFile": {
+      "type": "object",
+      "required": ["id", "path", "name", "type"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Unique identifier (UUID v4)"
+        },
+        "path": {
+          "type": "string",
+          "description": "File path (relative or absolute)"
+        },
+        "name": {
+          "type": "string",
+          "description": "Display name of the file"
+        },
+        "type": {
+          "type": "string",
+          "description": "MIME type (e.g., audio/wav, audio/mp3)"
+        },
+        "duration": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Duration in seconds"
+        },
+        "sampleRate": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Sample rate in Hz (e.g., 44100, 48000)"
+        },
+        "bitDepth": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Bit depth (e.g., 16, 24, 32)"
+        },
+        "channels": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Number of audio channels (1=mono, 2=stereo)"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "File size in bytes"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Tags associated with this file"
+        },
+        "bpm": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "description": "Beats per minute (null if not applicable)"
+        },
+        "key": {
+          "type": ["string", "null"],
+          "description": "Musical key (e.g., 'C', 'Am', null if not applicable)"
+        },
+        "metadata": {
+          "$ref": "#/definitions/audioMetadata",
+          "description": "Embedded audio metadata"
+        },
+        "analysis": {
+          "$ref": "#/definitions/audioAnalysis",
+          "description": "Audio analysis results"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "File creation timestamp"
+        },
+        "modifiedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last modification timestamp"
+        }
+      }
+    },
+    "audioMetadata": {
+      "type": "object",
+      "properties": {
+        "artist": {
+          "type": "string",
+          "description": "Artist name"
+        },
+        "album": {
+          "type": "string",
+          "description": "Album name"
+        },
+        "year": {
+          "type": ["integer", "null"],
+          "minimum": 1900,
+          "maximum": 2100,
+          "description": "Release year"
+        },
+        "genre": {
+          "type": "string",
+          "description": "Genre"
+        },
+        "comment": {
+          "type": "string",
+          "description": "Comments"
+        }
+      }
+    },
+    "audioAnalysis": {
+      "type": "object",
+      "properties": {
+        "rms": {
+          "type": "number",
+          "description": "RMS level in dB"
+        },
+        "peak": {
+          "type": "number",
+          "description": "Peak level in dB"
+        },
+        "spectralCentroid": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Spectral centroid in Hz"
+        },
+        "zeroCrossingRate": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Zero-crossing rate (normalized)"
+        }
+      }
+    }
+  }
+}

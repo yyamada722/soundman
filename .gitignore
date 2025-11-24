@@ -1,0 +1,173 @@
+# Soundman - Git Ignore File
+
+# ======================================
+# User Data (DO NOT COMMIT)
+# ======================================
+data/
+!data/.gitkeep
+!data/README.md
+
+# ======================================
+# Desktop App (C++ / JUCE)
+# ======================================
+
+# Build outputs
+desktop-app/Build/
+desktop-app/Builds/
+desktop-app/build/
+desktop-app/out/
+
+# JUCE generated files
+desktop-app/JuceLibraryCode/
+
+# CMake
+desktop-app/CMakeCache.txt
+desktop-app/CMakeFiles/
+desktop-app/cmake_install.cmake
+desktop-app/Makefile
+desktop-app/*.cmake
+
+# Visual Studio
+desktop-app/*.sln
+desktop-app/*.vcxproj
+desktop-app/*.vcxproj.filters
+desktop-app/*.vcxproj.user
+desktop-app/.vs/
+desktop-app/x64/
+desktop-app/Debug/
+desktop-app/Release/
+
+# Xcode
+desktop-app/*.xcodeproj
+desktop-app/*.xcworkspace
+desktop-app/DerivedData/
+
+# Compiled Object files
+*.o
+*.obj
+*.lo
+*.slo
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Compiled Static libraries
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+
+# ======================================
+# Web App (Vue.js / TypeScript)
+# ======================================
+
+# Dependencies
+web-app/node_modules/
+web-app/package-lock.json
+web-app/pnpm-lock.yaml
+web-app/yarn.lock
+
+# Build outputs
+web-app/dist/
+web-app/dist-ssr/
+web-app/.vite/
+
+# Logs
+web-app/logs/
+web-app/*.log
+web-app/npm-debug.log*
+web-app/yarn-debug.log*
+web-app/yarn-error.log*
+
+# Environment variables
+web-app/.env
+web-app/.env.local
+web-app/.env.*.local
+
+# Editor directories and files
+web-app/.vscode/*
+!web-app/.vscode/extensions.json
+web-app/.idea/
+
+# ======================================
+# OS Specific
+# ======================================
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# Linux
+*~
+.directory
+
+# ======================================
+# IDE / Editor
+# ======================================
+
+# Visual Studio Code
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# JetBrains
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+
+# ======================================
+# Temporary / Cache
+# ======================================
+
+*.tmp
+*.temp
+*.cache
+*.log
+*.bak
+*.old
+
+# ======================================
+# Testing
+# ======================================
+
+coverage/
+*.cover
+.nyc_output/
+.cache/
+
+# ======================================
+# Miscellaneous
+# ======================================
+
+*.stackdump
+*.pid
+*.seed
+*.pid.lock
