@@ -69,9 +69,12 @@ private:
     void drawWaveform(juce::Graphics& g, const juce::Rectangle<int>& bounds);
     void drawPositionMarker(juce::Graphics& g, const juce::Rectangle<int>& bounds);
     void drawZoomInfo(juce::Graphics& g, const juce::Rectangle<int>& bounds);
+    void drawTimeline(juce::Graphics& g, const juce::Rectangle<int>& bounds);
     void handleSeek(int x);
     void constrainViewRange();
     double screenXToPosition(int x, const juce::Rectangle<int>& bounds) const;
+    double calculateTimeInterval() const;
+    juce::String formatTime(double seconds) const;
 
     //==========================================================================
     std::unique_ptr<juce::AudioFormatReader> reader;

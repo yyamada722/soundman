@@ -213,6 +213,9 @@ void WaveformDisplay::paint(juce::Graphics& g)
     // Draw waveform
     drawWaveform(g, bounds.reduced(2));
 
+    // Draw timeline
+    drawTimeline(g, bounds.reduced(2));
+
     // Draw position marker
     drawPositionMarker(g, bounds.reduced(2));
 
@@ -483,4 +486,92 @@ void WaveformDisplay::changeListenerCallback(juce::ChangeBroadcaster* source)
 {
     // Handle change notifications if needed
     repaint();
+}
+
+//==============================================================================
+void WaveformDisplay::drawTimeline(juce::Graphics& g, const juce::Rectangle<int>& bounds)
+{
+    if (!fileLoaded || duration <= 0.0)
+        return;
+
+    const int timelineHeight = 25;
+    auto workingBounds = bounds;
+    auto timelineBounds = workingBounds.removeFromBottom(timelineHeight);
+
+    // Draw timeline background
+    g.setColour(juce::Colour(0xff252525));
+    g.fillRect(timelineBounds);
+
+    // Draw top border
+    g.setColour(juce::Colour(0xff3a3a3a));
+    g.drawHorizontalLine(timelineBounds.getY(), (float)timelineBounds.getX(), (float)timelineBounds.getRight());
+
+    // Calculate time interval based on zoom level
+    double interval = calculateTimeInterval();
+    double visibleDuration = (viewEnd - viewStart) * duration;
+
+    // Calculate start time for first marker
+    double startTime = viewStart * duration;
+    double firstMarkerTime = std::ceil(startTime / interval) * interval;
+
+    // Draw time markers
+    g.setColour(juce::Colours::grey);
+    g.setFont(juce::Font(10.0f));
+
+    for (double time = firstMarkerTime; time <= viewStart * duration + visibleDuration; time += interval)
+    {
+        // Calculate position
+        double normalizedPos = (time / duration - viewStart) / (viewEnd - viewStart);
+        if (normalizedPos < 0.0 || normalizedPos > 1.0)
+            continue;
+
+        int x = bounds.getX() + (int)(normalizedPos * bounds.getWidth());
+
+        // Draw tick mark
+        g.setColour(juce::Colour(0xff5a5a5a));
+        g.drawVerticalLine(x, (float)timelineBounds.getY(), (float)timelineBounds.getBottom());
+
+        // Draw time label
+        g.setColour(juce::Colours::lightgrey);
+        juce::String timeText = formatTime(time);
+        g.drawText(timeText, x - 30, timelineBounds.getY() + 5, 60, 15,
+                  juce::Justification::centred);
+    }
+}
+
+double WaveformDisplay::calculateTimeInterval() const
+{
+    if (duration <= 0.0)
+        return 1.0;
+
+    double visibleDuration = (viewEnd - viewStart) * duration;
+
+    // Choose appropriate interval based on visible duration
+    if (visibleDuration < 1.0)
+        return 0.1;  // 100ms intervals for very zoomed in
+    else if (visibleDuration < 5.0)
+        return 0.5;  // 500ms intervals
+    else if (visibleDuration < 10.0)
+        return 1.0;  // 1 second intervals
+    else if (visibleDuration < 30.0)
+        return 5.0;  // 5 second intervals
+    else if (visibleDuration < 60.0)
+        return 10.0;  // 10 second intervals
+    else if (visibleDuration < 300.0)
+        return 30.0;  // 30 second intervals
+    else if (visibleDuration < 600.0)
+        return 60.0;  // 1 minute intervals
+    else
+        return 120.0;  // 2 minute intervals
+}
+
+juce::String WaveformDisplay::formatTime(double seconds) const
+{
+    int minutes = (int)(seconds / 60.0);
+    double secs = seconds - minutes * 60.0;
+
+    if (minutes > 0)
+        return juce::String::formatted("%d:%05.2f", minutes, secs);
+    else
+        return juce::String::formatted("%.2f", secs);
 }
