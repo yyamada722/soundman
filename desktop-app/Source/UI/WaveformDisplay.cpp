@@ -52,6 +52,7 @@ void WaveformDisplay::clear()
     currentPosition = 0.0;
     duration = 0.0;
     thumbnailSamples = 0;
+    resetZoom();
     repaint();
 }
 
@@ -63,6 +64,53 @@ void WaveformDisplay::setPosition(double position)
         currentPosition = juce::jlimit(0.0, 1.0, position);
         repaint();
     }
+}
+
+//==============================================================================
+void WaveformDisplay::setZoom(double newZoom, double centerPosition)
+{
+    newZoom = juce::jlimit(MIN_ZOOM, MAX_ZOOM, newZoom);
+
+    if (newZoom == zoomLevel)
+        return;
+
+    // Determine the center point for zooming
+    double center = centerPosition;
+    if (center < 0.0)
+    {
+        // Use current view center if not specified
+        center = (viewStart + viewEnd) * 0.5;
+    }
+
+    // Calculate new view range
+    double viewWidth = 1.0 / newZoom;
+    viewStart = center - viewWidth * 0.5;
+    viewEnd = center + viewWidth * 0.5;
+
+    zoomLevel = newZoom;
+
+    // Constrain to valid range
+    constrainViewRange();
+
+    repaint();
+}
+
+void WaveformDisplay::zoomIn(double centerPosition)
+{
+    setZoom(zoomLevel * ZOOM_STEP, centerPosition);
+}
+
+void WaveformDisplay::zoomOut(double centerPosition)
+{
+    setZoom(zoomLevel / ZOOM_STEP, centerPosition);
+}
+
+void WaveformDisplay::resetZoom()
+{
+    zoomLevel = 1.0;
+    viewStart = 0.0;
+    viewEnd = 1.0;
+    repaint();
 }
 
 //==============================================================================
@@ -167,6 +215,9 @@ void WaveformDisplay::paint(juce::Graphics& g)
 
     // Draw position marker
     drawPositionMarker(g, bounds.reduced(2));
+
+    // Draw zoom info
+    drawZoomInfo(g, bounds.reduced(2));
 }
 
 void WaveformDisplay::drawWaveform(juce::Graphics& g, const juce::Rectangle<int>& bounds)
@@ -176,6 +227,12 @@ void WaveformDisplay::drawWaveform(juce::Graphics& g, const juce::Rectangle<int>
 
     const int numChannels = reader->numChannels;
     const int channelHeight = bounds.getHeight() / numChannels;
+
+    // Calculate visible sample range based on zoom/pan
+    int startSample = (int)(viewStart * thumbnailSamples);
+    int endSample = (int)(viewEnd * thumbnailSamples);
+    startSample = juce::jlimit(0, thumbnailSamples - 1, startSample);
+    endSample = juce::jlimit(startSample + 1, thumbnailSamples, endSample);
 
     // Draw each channel
     for (int ch = 0; ch < numChannels; ++ch)
@@ -196,10 +253,12 @@ void WaveformDisplay::drawWaveform(juce::Graphics& g, const juce::Rectangle<int>
         juce::Path waveformPath;
         bool firstPoint = true;
 
-        for (int i = 0; i < thumbnailSamples; ++i)
+        // Draw only visible range
+        for (int i = startSample; i < endSample; ++i)
         {
-            const float x = juce::jmap((float)i, 0.0f, (float)thumbnailSamples,
-                                      (float)channelBounds.getX(), (float)channelBounds.getRight());
+            // Map sample index to screen position based on visible range
+            const float normalizedPos = (i - startSample) / (float)(endSample - startSample);
+            const float x = channelBounds.getX() + normalizedPos * channelBounds.getWidth();
 
             const float minVal = thumbnailData.getSample(ch * 2, i);
             const float maxVal = thumbnailData.getSample(ch * 2 + 1, i);
@@ -219,10 +278,10 @@ void WaveformDisplay::drawWaveform(juce::Graphics& g, const juce::Rectangle<int>
         }
 
         // Draw path back
-        for (int i = thumbnailSamples - 1; i >= 0; --i)
+        for (int i = endSample - 1; i >= startSample; --i)
         {
-            const float x = juce::jmap((float)i, 0.0f, (float)thumbnailSamples,
-                                      (float)channelBounds.getX(), (float)channelBounds.getRight());
+            const float normalizedPos = (i - startSample) / (float)(endSample - startSample);
+            const float x = channelBounds.getX() + normalizedPos * channelBounds.getWidth();
 
             const float minVal = thumbnailData.getSample(ch * 2, i);
             const float y1 = midY - minVal * halfHeight;
@@ -247,7 +306,13 @@ void WaveformDisplay::drawPositionMarker(juce::Graphics& g, const juce::Rectangl
     if (!fileLoaded)
         return;
 
-    const float x = bounds.getX() + currentPosition * bounds.getWidth();
+    // Check if position is within visible range
+    if (currentPosition < viewStart || currentPosition > viewEnd)
+        return;
+
+    // Map position to screen coordinates considering zoom/pan
+    const float normalizedPos = (currentPosition - viewStart) / (viewEnd - viewStart);
+    const float x = bounds.getX() + normalizedPos * bounds.getWidth();
 
     // Draw playback position line
     g.setColour(juce::Colour(0xffff4444));
@@ -262,6 +327,59 @@ void WaveformDisplay::drawPositionMarker(juce::Graphics& g, const juce::Rectangl
     g.fillPath(triangle);
 }
 
+void WaveformDisplay::drawZoomInfo(juce::Graphics& g, const juce::Rectangle<int>& bounds)
+{
+    if (zoomLevel <= 1.0)
+        return;
+
+    // Draw zoom level indicator in top-right corner
+    g.setColour(juce::Colours::white.withAlpha(0.8f));
+    g.setFont(juce::Font(12.0f));
+
+    juce::String zoomText = juce::String::formatted("%.1fx", zoomLevel);
+    auto textBounds = juce::Rectangle<int>(bounds.getRight() - 60, bounds.getY() + 5, 55, 20);
+
+    // Semi-transparent background
+    g.setColour(juce::Colours::black.withAlpha(0.6f));
+    g.fillRect(textBounds);
+
+    g.setColour(juce::Colours::white);
+    g.drawText(zoomText, textBounds, juce::Justification::centred);
+}
+
+//==============================================================================
+void WaveformDisplay::constrainViewRange()
+{
+    // Ensure view range stays within 0.0 to 1.0
+    double viewWidth = viewEnd - viewStart;
+
+    if (viewStart < 0.0)
+    {
+        viewStart = 0.0;
+        viewEnd = viewWidth;
+    }
+
+    if (viewEnd > 1.0)
+    {
+        viewEnd = 1.0;
+        viewStart = 1.0 - viewWidth;
+    }
+
+    // Final clamp
+    viewStart = juce::jlimit(0.0, 1.0, viewStart);
+    viewEnd = juce::jlimit(0.0, 1.0, viewEnd);
+}
+
+double WaveformDisplay::screenXToPosition(int x, const juce::Rectangle<int>& bounds) const
+{
+    // Convert screen x coordinate to audio position (0.0 to 1.0) considering zoom/pan
+    double normalizedX = (x - bounds.getX()) / (double)bounds.getWidth();
+    normalizedX = juce::jlimit(0.0, 1.0, normalizedX);
+
+    // Map to visible range
+    return viewStart + normalizedX * (viewEnd - viewStart);
+}
+
 //==============================================================================
 void WaveformDisplay::resized()
 {
@@ -271,25 +389,82 @@ void WaveformDisplay::resized()
 
 void WaveformDisplay::mouseDown(const juce::MouseEvent& event)
 {
-    if (fileLoaded)
+    if (!fileLoaded)
+        return;
+
+    // Middle mouse button or Ctrl+Left drag for panning when zoomed
+    if (zoomLevel > 1.0 && (event.mods.isMiddleButtonDown() || event.mods.isCtrlDown()))
     {
+        isPanning = true;
+        lastPanX = event.x;
+        panStartViewStart = viewStart;
+    }
+    else
+    {
+        // Regular click for seeking
         handleSeek(event.x);
     }
 }
 
 void WaveformDisplay::mouseDrag(const juce::MouseEvent& event)
 {
-    if (fileLoaded)
+    if (!fileLoaded)
+        return;
+
+    if (isPanning)
     {
+        // Pan the view
+        int deltaX = event.x - lastPanX;
+        auto bounds = getLocalBounds().reduced(2);
+        double viewWidth = viewEnd - viewStart;
+
+        // Convert pixel delta to position delta
+        double deltaPos = -(deltaX / (double)bounds.getWidth()) * viewWidth;
+
+        viewStart = panStartViewStart + deltaPos;
+        viewEnd = viewStart + viewWidth;
+
+        constrainViewRange();
+        repaint();
+
+        // Don't update lastPanX - keep it relative to start position
+    }
+    else
+    {
+        // Regular drag for seeking
         handleSeek(event.x);
+    }
+}
+
+void WaveformDisplay::mouseUp(const juce::MouseEvent& event)
+{
+    isPanning = false;
+}
+
+void WaveformDisplay::mouseWheelMove(const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel)
+{
+    if (!fileLoaded)
+        return;
+
+    // Get mouse position as a position in the audio file
+    auto bounds = getLocalBounds().reduced(2);
+    double centerPos = screenXToPosition(event.x, bounds);
+
+    // Zoom in/out based on wheel direction
+    if (wheel.deltaY > 0.0f)
+    {
+        zoomIn(centerPos);
+    }
+    else if (wheel.deltaY < 0.0f)
+    {
+        zoomOut(centerPos);
     }
 }
 
 void WaveformDisplay::handleSeek(int x)
 {
     auto bounds = getLocalBounds().reduced(2);
-    double newPosition = juce::jlimit(0.0, 1.0,
-                                     (x - bounds.getX()) / (double)bounds.getWidth());
+    double newPosition = screenXToPosition(x, bounds);
 
     if (seekCallback)
     {

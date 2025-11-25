@@ -34,6 +34,14 @@ public:
     double getPosition() const { return currentPosition; }
 
     //==========================================================================
+    // Zoom and Pan controls
+    void setZoom(double newZoom, double centerPosition = -1.0);  // centerPosition: -1 = current center
+    double getZoom() const { return zoomLevel; }
+    void zoomIn(double centerPosition = -1.0);
+    void zoomOut(double centerPosition = -1.0);
+    void resetZoom();
+
+    //==========================================================================
     // Callbacks
     using SeekCallback = std::function<void(double)>;
     void setSeekCallback(SeekCallback callback) { seekCallback = callback; }
@@ -44,6 +52,8 @@ public:
     void resized() override;
     void mouseDown(const juce::MouseEvent& event) override;
     void mouseDrag(const juce::MouseEvent& event) override;
+    void mouseUp(const juce::MouseEvent& event) override;
+    void mouseWheelMove(const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel) override;
 
     //==========================================================================
     // Timer override (for smooth position updates)
@@ -58,7 +68,10 @@ private:
     void generateThumbnail();
     void drawWaveform(juce::Graphics& g, const juce::Rectangle<int>& bounds);
     void drawPositionMarker(juce::Graphics& g, const juce::Rectangle<int>& bounds);
+    void drawZoomInfo(juce::Graphics& g, const juce::Rectangle<int>& bounds);
     void handleSeek(int x);
+    void constrainViewRange();
+    double screenXToPosition(int x, const juce::Rectangle<int>& bounds) const;
 
     //==========================================================================
     std::unique_ptr<juce::AudioFormatReader> reader;
@@ -71,6 +84,21 @@ private:
     int thumbnailSamples { 0 };
 
     SeekCallback seekCallback;
+
+    //==========================================================================
+    // Zoom and Pan state
+    double zoomLevel { 1.0 };           // 1.0 = full view, higher = zoomed in
+    double viewStart { 0.0 };           // Start of visible range (0.0 to 1.0)
+    double viewEnd { 1.0 };             // End of visible range (0.0 to 1.0)
+
+    static constexpr double MIN_ZOOM = 1.0;
+    static constexpr double MAX_ZOOM = 100.0;
+    static constexpr double ZOOM_STEP = 1.5;
+
+    // Panning state
+    bool isPanning { false };
+    int lastPanX { 0 };
+    double panStartViewStart { 0.0 };
 
     //==========================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(WaveformDisplay)

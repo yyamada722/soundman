@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.18)
 
-project(SoundmanDesktop VERSION 0.1.0)
+project(SoundmanDesktop VERSION 0.2.0)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -48,6 +48,10 @@ target_sources(SoundmanDesktop PRIVATE
     # Source/UI/MainComponent.cpp
     Source/UI/WaveformDisplay.cpp
     Source/UI/LevelMeter.cpp
+    Source/UI/PanelContainer.cpp
+    Source/UI/TabbedDisplayArea.cpp
+    Source/UI/DeviceControlPanel.cpp
+    Source/UI/KeyboardHandler.cpp
     # Source/UI/SpectrumDisplay.cpp
     # Source/UI/SettingsPanel.cpp
 
