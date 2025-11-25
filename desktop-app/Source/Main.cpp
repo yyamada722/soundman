@@ -24,9 +24,35 @@
     Main Application Window Component with Modular UI
 */
 class MainComponent : public juce::Component,
-                      public juce::Timer
+                      public juce::Timer,
+                      public juce::MenuBarModel
 {
 public:
+    //==========================================================================
+    // Menu IDs
+    enum MenuItemIDs
+    {
+        // File menu
+        fileOpen = 1,
+        fileExit,
+
+        // View menu
+        viewWaveform = 100,
+        viewSpectrum,
+        viewResetZoom,
+        viewFullScreen,
+
+        // Playback menu
+        playbackPlayPause = 200,
+        playbackStop,
+        playbackSkipToStart,
+        playbackSkipToEnd,
+
+        // Help menu
+        helpAbout = 300,
+        helpKeyboardShortcuts,
+        helpGitHub
+    };
     //==========================================================================
     MainComponent()
     {
@@ -58,6 +84,7 @@ public:
         setupCenterDisplay();
         setupRightPanel();
         setupKeyboardShortcuts();
+        setupMenuBar();
 
         // Set window size (professional size)
         setSize(1920, 1080);
@@ -226,9 +253,30 @@ private:
             [this]() { tabbedDisplay.setCurrentTab(1); }
         );
 
+        keyboardHandler.registerCommand(
+            juce::KeyPress(juce::KeyPress::homeKey),
+            [this]() { audioEngine.setPosition(0.0); }
+        );
+
+        keyboardHandler.registerCommand(
+            juce::KeyPress(juce::KeyPress::endKey),
+            [this]() { audioEngine.setPosition(1.0); }
+        );
+
+        keyboardHandler.registerCommand(
+            juce::KeyPress(juce::KeyPress::F11Key),
+            [this]() { toggleFullScreen(); }
+        );
+
         // Add keyboard listener to the main component
         addKeyListener(&keyboardHandler);
         setWantsKeyboardFocus(true);
+    }
+
+    void setupMenuBar()
+    {
+        // Menu bar is set up in the MainWindow class
+        // This component provides the MenuBarModel implementation
     }
 
     //==========================================================================
@@ -347,6 +395,176 @@ private:
     }
 
     //==========================================================================
+    // MenuBarModel implementation
+    juce::StringArray getMenuBarNames() override
+    {
+        return { "File", "View", "Playback", "Help" };
+    }
+
+    juce::PopupMenu getMenuForIndex(int menuIndex, const juce::String& /*menuName*/) override
+    {
+        juce::PopupMenu menu;
+
+        if (menuIndex == 0)  // File menu
+        {
+            menu.addItem(fileOpen, "Open Audio File...     Cmd+O");
+            menu.addSeparator();
+            menu.addItem(fileExit, "Exit     Cmd+Q");
+        }
+        else if (menuIndex == 1)  // View menu
+        {
+            menu.addItem(viewWaveform, "Waveform     Cmd+1", true, tabbedDisplay.getCurrentTabIndex() == 0);
+            menu.addItem(viewSpectrum, "Spectrum     Cmd+2", true, tabbedDisplay.getCurrentTabIndex() == 1);
+            menu.addSeparator();
+            menu.addItem(viewResetZoom, "Reset Zoom", audioEngine.hasFileLoaded());
+            menu.addSeparator();
+            menu.addItem(viewFullScreen, "Toggle Full Screen     F11");
+        }
+        else if (menuIndex == 2)  // Playback menu
+        {
+            bool hasFile = audioEngine.hasFileLoaded();
+            bool isPlaying = audioEngine.isPlaying();
+
+            menu.addItem(playbackPlayPause, (isPlaying ? "Pause" : "Play") + juce::String("     Space"), hasFile);
+            menu.addItem(playbackStop, "Stop     S", hasFile);
+            menu.addSeparator();
+            menu.addItem(playbackSkipToStart, "Skip to Start     Home", hasFile);
+            menu.addItem(playbackSkipToEnd, "Skip to End     End", hasFile);
+        }
+        else if (menuIndex == 3)  // Help menu
+        {
+            menu.addItem(helpAbout, "About Soundman...");
+            menu.addItem(helpKeyboardShortcuts, "Keyboard Shortcuts...");
+            menu.addSeparator();
+            menu.addItem(helpGitHub, "Visit GitHub Repository...");
+        }
+
+        return menu;
+    }
+
+    void menuItemSelected(int menuItemID, int /*menuIndex*/) override
+    {
+        switch (menuItemID)
+        {
+            case fileOpen:
+                loadAudioFile();
+                break;
+
+            case fileExit:
+                juce::JUCEApplication::getInstance()->systemRequestedQuit();
+                break;
+
+            case viewWaveform:
+                tabbedDisplay.setCurrentTab(0);
+                break;
+
+            case viewSpectrum:
+                tabbedDisplay.setCurrentTab(1);
+                break;
+
+            case viewResetZoom:
+                waveformDisplay.resetZoom();
+                break;
+
+            case viewFullScreen:
+                toggleFullScreen();
+                break;
+
+            case playbackPlayPause:
+                togglePlayPause();
+                break;
+
+            case playbackStop:
+                audioEngine.stop();
+                break;
+
+            case playbackSkipToStart:
+                audioEngine.setPosition(0.0);
+                break;
+
+            case playbackSkipToEnd:
+                audioEngine.setPosition(1.0);
+                break;
+
+            case helpAbout:
+                showAboutDialog();
+                break;
+
+            case helpKeyboardShortcuts:
+                showKeyboardShortcuts();
+                break;
+
+            case helpGitHub:
+                juce::URL("https://github.com/yyamada722/soundman").launchInDefaultBrowser();
+                break;
+
+            default:
+                break;
+        }
+    }
+
+    void toggleFullScreen()
+    {
+        auto* window = getTopLevelComponent();
+        if (window != nullptr)
+        {
+            if (auto* docWindow = dynamic_cast<juce::DocumentWindow*>(window))
+            {
+                docWindow->setFullScreen(!docWindow->isFullScreen());
+            }
+        }
+    }
+
+    void showAboutDialog()
+    {
+        juce::String aboutText =
+            "Soundman Desktop v0.2.0\n\n"
+            "Real-time Audio Analysis Tool\n\n"
+            "Features:\n"
+            "• Waveform display with zoom/pan\n"
+            "• Real-time spectrum analyzer\n"
+            "• Level meters\n"
+            "• Professional modular UI\n\n"
+            "Built with JUCE Framework\n"
+            "© 2024 Soundman Project";
+
+        juce::AlertWindow::showMessageBoxAsync(
+            juce::AlertWindow::InfoIcon,
+            "About Soundman",
+            aboutText,
+            "OK"
+        );
+    }
+
+    void showKeyboardShortcuts()
+    {
+        juce::String shortcutsText =
+            "File:\n"
+            "  Cmd+O - Open Audio File\n"
+            "  Cmd+Q - Exit\n\n"
+            "View:\n"
+            "  Cmd+1 - Waveform Display\n"
+            "  Cmd+2 - Spectrum Analyzer\n"
+            "  F11 - Toggle Full Screen\n\n"
+            "Playback:\n"
+            "  Space - Play/Pause\n"
+            "  S - Stop\n"
+            "  Home - Skip to Start\n"
+            "  End - Skip to End\n\n"
+            "Waveform:\n"
+            "  Mouse Wheel - Zoom In/Out\n"
+            "  Ctrl+Drag - Pan\n"
+            "  Click - Seek";
+
+        juce::AlertWindow::showMessageBoxAsync(
+            juce::AlertWindow::InfoIcon,
+            "Keyboard Shortcuts",
+            shortcutsText,
+            "OK"
+        );
+    }
+
+    //==========================================================================
     AudioEngine audioEngine;
 
     // UI Components
@@ -421,7 +639,16 @@ public:
                            DocumentWindow::allButtons)
         {
             setUsingNativeTitleBar(true);
-            setContentOwned(new MainComponent(), true);
+
+            auto* mainComp = new MainComponent();
+            setContentOwned(mainComp, true);
+
+            // Set up menu bar
+           #if JUCE_MAC
+            setMenuBar(mainComp);
+           #else
+            setMenuBar(mainComp, 24);  // 24 pixel height menu bar
+           #endif
 
            #if JUCE_IOS || JUCE_ANDROID
             setFullScreen(true);
@@ -431,6 +658,12 @@ public:
            #endif
 
             setVisible(true);
+        }
+
+        ~MainWindow()
+        {
+            // Clear menu bar before destroying content
+            setMenuBar(nullptr);
         }
 
         void closeButtonPressed() override
