@@ -17,6 +17,7 @@
 #include "UI/TabbedDisplayArea.h"
 #include "UI/DeviceControlPanel.h"
 #include "UI/KeyboardHandler.h"
+#include "UI/SpectrumDisplay.h"
 
 //==============================================================================
 /**
@@ -149,12 +150,21 @@ private:
         // Add waveform display as the first tab
         tabbedDisplay.addTab("Waveform", &waveformDisplay);
 
+        // Add spectrum display as the second tab
+        tabbedDisplay.addTab("Spectrum", &spectrumDisplay);
+
         // Setup waveform display
         waveformDisplay.setSeekCallback([this](double position)
         {
             audioEngine.setPosition(position);
             updateLevelMeterAtPosition(position);
             lastLevelUpdatePosition = position;
+        });
+
+        // Setup spectrum analyzer callback from audio engine
+        audioEngine.setSpectrumCallback([this](float sample)
+        {
+            spectrumDisplay.pushNextSampleIntoFifo(sample);
         });
 
         // Tab changed callback
@@ -209,6 +219,11 @@ private:
         keyboardHandler.registerCommand(
             juce::KeyPress('1', juce::ModifierKeys::commandModifier, 0),
             [this]() { tabbedDisplay.setCurrentTab(0); }
+        );
+
+        keyboardHandler.registerCommand(
+            juce::KeyPress('2', juce::ModifierKeys::commandModifier, 0),
+            [this]() { tabbedDisplay.setCurrentTab(1); }
         );
 
         // Add keyboard listener to the main component
@@ -341,6 +356,7 @@ private:
     DeviceControlPanel deviceControlPanel;
     TabbedDisplayArea tabbedDisplay;
     WaveformDisplay waveformDisplay;
+    SpectrumDisplay spectrumDisplay;
     LevelMeter levelMeter;
     juce::Label analysisControlsPlaceholder;
     juce::Label statusBar;

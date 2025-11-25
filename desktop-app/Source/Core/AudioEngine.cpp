@@ -364,6 +364,20 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
         // Call level callback (thread-safe)
         levelCallback(leftRMS, leftPeak, rightRMS, rightPeak);
     }
+
+    // Push samples to spectrum analyzer (if callback is set)
+    if (spectrumCallback && numOutputChannels > 0 && playState.load() == PlayState::Playing)
+    {
+        // Push mono mix of left and right channels for spectrum analysis
+        const float* leftData = buffer.getReadPointer(0);
+        const float* rightData = numOutputChannels >= 2 ? buffer.getReadPointer(1) : leftData;
+
+        for (int i = 0; i < numSamples; ++i)
+        {
+            float monoSample = (leftData[i] + rightData[i]) * 0.5f;
+            spectrumCallback(monoSample);
+        }
+    }
 }
 
 void AudioEngine::audioDeviceAboutToStart(juce::AudioIODevice* device)

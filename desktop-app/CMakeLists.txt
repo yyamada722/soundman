@@ -52,7 +52,7 @@ target_sources(SoundmanDesktop PRIVATE
     Source/UI/TabbedDisplayArea.cpp
     Source/UI/DeviceControlPanel.cpp
     Source/UI/KeyboardHandler.cpp
-    # Source/UI/SpectrumDisplay.cpp
+    Source/UI/SpectrumDisplay.cpp
     # Source/UI/SettingsPanel.cpp
 
     # Data
