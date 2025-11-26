@@ -388,6 +388,37 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
     {
         truePeakCallback(leftPeak, rightPeak);
     }
+
+    // Calculate and send phase correlation (if callback is set)
+    if (phaseCorrelationCallback && numOutputChannels >= 2 && playState.load() == PlayState::Playing)
+    {
+        const float* leftData = buffer.getReadPointer(0);
+        const float* rightData = buffer.getReadPointer(1);
+
+        // Calculate correlation coefficient
+        // correlation = sum(L*R) / sqrt(sum(L^2) * sum(R^2))
+        double sumLR = 0.0;
+        double sumLL = 0.0;
+        double sumRR = 0.0;
+
+        for (int i = 0; i < numSamples; ++i)
+        {
+            double L = leftData[i];
+            double R = rightData[i];
+            sumLR += L * R;
+            sumLL += L * L;
+            sumRR += R * R;
+        }
+
+        float correlation = 0.0f;
+        double denominator = std::sqrt(sumLL * sumRR);
+        if (denominator > 0.0)
+        {
+            correlation = (float)(sumLR / denominator);
+        }
+
+        phaseCorrelationCallback(correlation);
+    }
 }
 
 void AudioEngine::audioDeviceAboutToStart(juce::AudioIODevice* device)

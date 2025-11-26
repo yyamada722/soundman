@@ -95,6 +95,9 @@ public:
     using TruePeakCallback = std::function<void(float, float)>;  // leftPeak, rightPeak
     void setTruePeakCallback(TruePeakCallback callback) { truePeakCallback = callback; }
 
+    using PhaseCorrelationCallback = std::function<void(float)>;  // correlation coefficient
+    void setPhaseCorrelationCallback(PhaseCorrelationCallback callback) { phaseCorrelationCallback = callback; }
+
     //==========================================================================
     // AudioIODeviceCallback implementation
     void audioDeviceIOCallbackWithContext(const float* const* inputChannelData,
@@ -133,6 +136,7 @@ private:
     LevelCallback levelCallback;
     SpectrumCallback spectrumCallback;
     TruePeakCallback truePeakCallback;
+    PhaseCorrelationCallback phaseCorrelationCallback;
 
     bool initialized { false };
     double preparedSampleRate { 0.0 };
