@@ -92,6 +92,9 @@ public:
     using SpectrumCallback = std::function<void(float)>;  // sample for FFT analysis
     void setSpectrumCallback(SpectrumCallback callback) { spectrumCallback = callback; }
 
+    using TruePeakCallback = std::function<void(float, float)>;  // leftPeak, rightPeak
+    void setTruePeakCallback(TruePeakCallback callback) { truePeakCallback = callback; }
+
     //==========================================================================
     // AudioIODeviceCallback implementation
     void audioDeviceIOCallbackWithContext(const float* const* inputChannelData,
@@ -129,6 +132,7 @@ private:
     ErrorCallback errorCallback;
     LevelCallback levelCallback;
     SpectrumCallback spectrumCallback;
+    TruePeakCallback truePeakCallback;
 
     bool initialized { false };
     double preparedSampleRate { 0.0 };

@@ -53,6 +53,7 @@ target_sources(SoundmanDesktop PRIVATE
     Source/UI/DeviceControlPanel.cpp
     Source/UI/KeyboardHandler.cpp
     Source/UI/SpectrumDisplay.cpp
+    Source/UI/TruePeakMeter.cpp
     # Source/UI/SettingsPanel.cpp
 
     # Data

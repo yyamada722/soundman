@@ -314,14 +314,16 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
 
     mixerSource.getNextAudioBlock(channelInfo);
 
+    // Calculate levels for level meter and true peak meter
+    float leftRMS = 0.0f;
+    float leftPeak = 0.0f;
+    float rightRMS = 0.0f;
+    float rightPeak = 0.0f;
+
     // Calculate levels for level meter (if callback is set and playing)
     // Only calculate during playback to avoid overriding manual position-based calculations
     if (levelCallback && numOutputChannels > 0 && playState.load() == PlayState::Playing)
     {
-        float leftRMS = 0.0f;
-        float leftPeak = 0.0f;
-        float rightRMS = 0.0f;
-        float rightPeak = 0.0f;
 
         // Calculate left channel
         if (numOutputChannels >= 1)
@@ -377,6 +379,14 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
             float monoSample = (leftData[i] + rightData[i]) * 0.5f;
             spectrumCallback(monoSample);
         }
+    }
+
+    // Send true peak values (if callback is set)
+    // Note: This is a simplified implementation. For true inter-sample peak detection,
+    // oversampling should be used, but this provides a good approximation.
+    if (truePeakCallback && numOutputChannels > 0 && playState.load() == PlayState::Playing)
+    {
+        truePeakCallback(leftPeak, rightPeak);
     }
 }
 

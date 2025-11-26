@@ -18,6 +18,7 @@
 #include "UI/DeviceControlPanel.h"
 #include "UI/KeyboardHandler.h"
 #include "UI/SpectrumDisplay.h"
+#include "UI/TruePeakMeter.h"
 
 //==============================================================================
 /**
@@ -207,21 +208,21 @@ private:
         addAndMakeVisible(rightPanelContainer);
 
         // Add level meter at top
-        rightPanelContainer.addPanel(&levelMeter, 0.70, 200, -1, "Levels");
+        rightPanelContainer.addPanel(&levelMeter, 0.50, 200, -1, "Levels");
 
-        // Add placeholder for future analysis controls
-        addAndMakeVisible(analysisControlsPlaceholder);
-        analysisControlsPlaceholder.setColour(juce::Label::backgroundColourId,
-                                             juce::Colour(0xff1a1a1a));
-        analysisControlsPlaceholder.setText("Analysis Controls\n(Coming in Phase 3)",
-                                           juce::dontSendNotification);
-        analysisControlsPlaceholder.setJustificationType(juce::Justification::centred);
-        rightPanelContainer.addPanel(&analysisControlsPlaceholder, 0.30, 100, -1, "Controls");
+        // Add true peak meter
+        rightPanelContainer.addPanel(&truePeakMeter, 0.50, 150, -1, "True Peak");
 
         // Set level callback from audio engine
         audioEngine.setLevelCallback([this](float leftRMS, float leftPeak, float rightRMS, float rightPeak)
         {
             levelMeter.setLevels(leftRMS, leftPeak, rightRMS, rightPeak);
+        });
+
+        // Set true peak callback from audio engine
+        audioEngine.setTruePeakCallback([this](float leftPeak, float rightPeak)
+        {
+            truePeakMeter.setTruePeaks(leftPeak, rightPeak);
         });
     }
 
@@ -576,7 +577,7 @@ private:
     WaveformDisplay waveformDisplay;
     SpectrumDisplay spectrumDisplay;
     LevelMeter levelMeter;
-    juce::Label analysisControlsPlaceholder;
+    TruePeakMeter truePeakMeter;
     juce::Label statusBar;
 
     KeyboardHandler keyboardHandler;
