@@ -71,6 +71,7 @@ target_sources(SoundmanDesktop PRIVATE
     # Source/Data/MetadataWriter.cpp
 
     # Utils
+    Source/Utils/DataExporter.cpp
     # Source/Utils/Logger.cpp
     # Source/Utils/Config.cpp
 )

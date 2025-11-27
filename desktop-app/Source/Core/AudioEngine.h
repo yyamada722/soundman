@@ -30,6 +30,13 @@ public:
         Paused
     };
 
+    enum class RecordState
+    {
+        Stopped,
+        Recording,
+        Paused
+    };
+
     //==========================================================================
     AudioEngine();
     ~AudioEngine() override;
@@ -52,6 +59,15 @@ public:
     void pause();
     void stop();
     void setPosition(double position);  // 0.0 to 1.0
+
+    //==========================================================================
+    // Recording control
+    bool startRecording(const juce::File& outputFile);
+    void stopRecording();
+    void pauseRecording();
+    void resumeRecording();
+    RecordState getRecordState() const { return recordState.load(); }
+    bool isRecording() const { return recordState.load() == RecordState::Recording; }
 
     //==========================================================================
     // State queries
@@ -157,6 +173,13 @@ private:
 
     // Master gain control
     std::atomic<float> masterGain { 1.0f };  // Linear gain (1.0 = 0dB)
+
+    // Recording state
+    std::atomic<RecordState> recordState { RecordState::Stopped };
+    std::unique_ptr<juce::AudioFormatWriter::ThreadedWriter> recordingWriter;
+    juce::File recordingFile;
+    juce::CriticalSection writerLock;
+    juce::TimeSliceThread recordingThread { "Recording Thread" };
 
     // Loudness measurement state
     std::vector<float> loudnessBuffer;           // Circular buffer for loudness blocks

@@ -322,6 +322,25 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
         buffer.applyGain(gain);
     }
 
+    // Write to recording file if recording
+    if (recordState.load() == RecordState::Recording)
+    {
+        const juce::ScopedLock sl(writerLock);
+        if (recordingWriter != nullptr)
+        {
+            // If we have input channels, record from input; otherwise record output
+            if (numInputChannels > 0 && inputChannelData != nullptr)
+            {
+                juce::AudioBuffer<float> inputBuffer(const_cast<float**>(inputChannelData), numInputChannels, numSamples);
+                recordingWriter->write(inputChannelData, numSamples);
+            }
+            else
+            {
+                recordingWriter->write(outputChannelData, numSamples);
+            }
+        }
+    }
+
     // Calculate levels for level meter and true peak meter
     float leftRMS = 0.0f;
     float leftPeak = 0.0f;
@@ -594,6 +613,102 @@ void AudioEngine::prepareToPlay(double sampleRate, int blockSize)
     if (resamplingSource != nullptr)
         resamplingSource->prepareToPlay(blockSize, sampleRate);
 }
+
+//==============================================================================
+// Recording methods
+
+bool AudioEngine::startRecording(const juce::File& outputFile)
+{
+    stopRecording();  // Stop any existing recording
+
+    recordingFile = outputFile;
+
+    // Ensure parent directory exists
+    recordingFile.getParentDirectory().createDirectory();
+
+    // Create WAV format writer
+    juce::WavAudioFormat wavFormat;
+    std::unique_ptr<juce::FileOutputStream> fileStream(new juce::FileOutputStream(recordingFile));
+
+    if (!fileStream->openedOk())
+    {
+        showError("Failed to create recording file: " + recordingFile.getFullPathName());
+        return false;
+    }
+
+    // Get current audio settings
+    auto* device = deviceManager.getCurrentAudioDevice();
+    if (device == nullptr)
+    {
+        showError("No audio device available for recording");
+        return false;
+    }
+
+    double sampleRate = device->getCurrentSampleRate();
+    int numChannels = device->getActiveInputChannels().countNumberOfSetBits();
+
+    if (numChannels == 0)
+    {
+        numChannels = 2;  // Default to stereo if no input channels
+    }
+
+    // Create audio format writer
+    std::unique_ptr<juce::AudioFormatWriter> writer(wavFormat.createWriterFor(
+        fileStream.release(),
+        sampleRate,
+        (juce::uint32)numChannels,
+        16,  // 16-bit
+        {},
+        0
+    ));
+
+    if (writer == nullptr)
+    {
+        showError("Failed to create audio writer");
+        return false;
+    }
+
+    // Start recording thread if not already running
+    if (!recordingThread.isThreadRunning())
+        recordingThread.startThread();
+
+    // Create threaded writer for better performance
+    {
+        const juce::ScopedLock sl(writerLock);
+        recordingWriter.reset(new juce::AudioFormatWriter::ThreadedWriter(writer.release(), recordingThread, 32768));
+    }
+
+    recordState.store(RecordState::Recording);
+    return true;
+}
+
+void AudioEngine::stopRecording()
+{
+    if (recordState.load() == RecordState::Stopped)
+        return;
+
+    recordState.store(RecordState::Stopped);
+
+    // Flush and close the writer
+    {
+        const juce::ScopedLock sl(writerLock);
+        recordingWriter.reset();
+    }
+}
+
+void AudioEngine::pauseRecording()
+{
+    if (recordState.load() == RecordState::Recording)
+        recordState.store(RecordState::Paused);
+}
+
+void AudioEngine::resumeRecording()
+{
+    if (recordState.load() == RecordState::Paused)
+        recordState.store(RecordState::Recording);
+}
+
+//==============================================================================
 
 void AudioEngine::releaseResources()
 {
