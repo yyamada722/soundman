@@ -86,6 +86,11 @@ public:
     juce::AudioDeviceManager& getDeviceManager() { return deviceManager; }
 
     //==========================================================================
+    // Master gain control
+    void setMasterGain(float gainLinear) { masterGain.store(gainLinear); }
+    float getMasterGain() const { return masterGain.load(); }
+
+    //==========================================================================
     // Callbacks
     using ErrorCallback = std::function<void(const juce::String&)>;
     void setErrorCallback(ErrorCallback callback) { errorCallback = callback; }
@@ -149,6 +154,9 @@ private:
     bool initialized { false };
     double preparedSampleRate { 0.0 };
     int preparedBlockSize { 0 };
+
+    // Master gain control
+    std::atomic<float> masterGain { 1.0f };  // Linear gain (1.0 = 0dB)
 
     // Loudness measurement state
     std::vector<float> loudnessBuffer;           // Circular buffer for loudness blocks

@@ -315,6 +315,13 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
 
     mixerSource.getNextAudioBlock(channelInfo);
 
+    // Apply master gain
+    float gain = masterGain.load();
+    if (gain != 1.0f)
+    {
+        buffer.applyGain(gain);
+    }
+
     // Calculate levels for level meter and true peak meter
     float leftRMS = 0.0f;
     float leftPeak = 0.0f;

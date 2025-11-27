@@ -62,6 +62,9 @@ target_sources(SoundmanDesktop PRIVATE
     Source/UI/PlaylistPanel.cpp
     Source/UI/VectorscopeDisplay.cpp
     Source/UI/HistogramDisplay.cpp
+    Source/UI/MultiViewContainer.cpp
+    Source/UI/TimecodeDisplay.cpp
+    Source/UI/MasterGainControl.cpp
 
     # Data
     # Source/Data/DataManager.cpp

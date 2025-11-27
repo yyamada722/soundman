@@ -27,6 +27,9 @@
 #include "UI/PlaylistPanel.h"
 #include "UI/VectorscopeDisplay.h"
 #include "UI/HistogramDisplay.h"
+#include "UI/MultiViewContainer.h"
+#include "UI/TimecodeDisplay.h"
+#include "UI/MasterGainControl.h"
 
 //==============================================================================
 /**
@@ -203,6 +206,12 @@ private:
         // Add histogram display
         tabbedDisplay.addTab("Histogram", &histogramDisplay);
 
+        // Add multi-view container
+        tabbedDisplay.addTab("Multi-View", &multiViewContainer);
+
+        // Add timecode display
+        tabbedDisplay.addTab("Timecode", &timecodeDisplay);
+
         // Setup waveform display
         waveformDisplay.setSeekCallback([this](double position)
         {
@@ -216,6 +225,12 @@ private:
         {
             spectrumDisplay.pushNextSampleIntoFifo(sample);
             histogramDisplay.pushSample(sample);
+
+            // Feed to multi-view container components
+            if (auto* spectrum = multiViewContainer.getSpectrumDisplay())
+                spectrum->pushNextSampleIntoFifo(sample);
+            if (auto* histogram = multiViewContainer.getHistogramDisplay())
+                histogram->pushSample(sample);
         });
 
         // Tab changed callback
@@ -242,6 +257,15 @@ private:
         // Add loudness meter
         rightPanelContainer.addPanel(&loudnessMeter, 0.25, 200, -1, "Loudness");
 
+        // Add master gain control
+        rightPanelContainer.addPanel(&masterGainControl, 0.0, 180, 180, "Master Gain");
+
+        // Set master gain callback
+        masterGainControl.onGainChanged = [this](float gainLinear)
+        {
+            audioEngine.setMasterGain(gainLinear);
+        };
+
         // Set level callback from audio engine
         audioEngine.setLevelCallback([this](float leftRMS, float leftPeak, float rightRMS, float rightPeak)
         {
@@ -249,6 +273,10 @@ private:
 
             // Feed to vectorscope (using peak values as samples)
             vectorscopeDisplay.pushSample(leftPeak, rightPeak);
+
+            // Feed to multi-view container vectorscope
+            if (auto* vectorscope = multiViewContainer.getVectorscopeDisplay())
+                vectorscope->pushSample(leftPeak, rightPeak);
         });
 
         // Set true peak callback from audio engine
@@ -742,6 +770,9 @@ private:
     SpectrumDisplay spectrumDisplay;
     VectorscopeDisplay vectorscopeDisplay;
     HistogramDisplay histogramDisplay;
+    MultiViewContainer multiViewContainer;
+    TimecodeDisplay timecodeDisplay;
+    MasterGainControl masterGainControl;
     LevelMeter levelMeter;
     TruePeakMeter truePeakMeter;
     PhaseMeter phaseMeter;
