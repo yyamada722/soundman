@@ -20,6 +20,13 @@
 #include "UI/SpectrumDisplay.h"
 #include "UI/TruePeakMeter.h"
 #include "UI/PhaseMeter.h"
+#include "UI/LoudnessMeter.h"
+#include "UI/SettingsDialog.h"
+#include "UI/FileInfoPanel.h"
+#include "UI/RecordingPanel.h"
+#include "UI/PlaylistPanel.h"
+#include "UI/VectorscopeDisplay.h"
+#include "UI/HistogramDisplay.h"
 
 //==============================================================================
 /**
@@ -36,6 +43,7 @@ public:
     {
         // File menu
         fileOpen = 1,
+        fileSettings,
         fileExit,
 
         // View menu
@@ -85,6 +93,8 @@ public:
         setupDevicePanel();
         setupCenterDisplay();
         setupRightPanel();
+        setupRecordingPanel();
+        setupPlaylistPanel();
         setupKeyboardShortcuts();
         setupMenuBar();
 
@@ -144,8 +154,13 @@ private:
         // Create main 3-column layout
         addAndMakeVisible(mainPanelContainer);
 
-        // Left panel: Device controls
-        mainPanelContainer.addPanel(&deviceControlPanel, 0.15, 220, 400, "Device");
+        // Left panel: Device controls, file info, recording, and playlist
+        addAndMakeVisible(leftPanelContainer);
+        leftPanelContainer.addPanel(&deviceControlPanel, 0.25, 200, -1, "Device");
+        leftPanelContainer.addPanel(&fileInfoPanel, 0.25, 250, -1, "File Info");
+        leftPanelContainer.addPanel(&recordingPanel, 0.25, 250, -1, "Recording");
+        leftPanelContainer.addPanel(&playlistPanel, 0.25, 250, -1, "Playlist");
+        mainPanelContainer.addPanel(&leftPanelContainer, 0.15, 220, 400, "Control");
 
         // Center panel: Tabbed display area
         mainPanelContainer.addPanel(&tabbedDisplay, 0.60, 600, -1, "Display");
@@ -182,6 +197,12 @@ private:
         // Add spectrum display as the second tab
         tabbedDisplay.addTab("Spectrum", &spectrumDisplay);
 
+        // Add vectorscope display
+        tabbedDisplay.addTab("Vectorscope", &vectorscopeDisplay);
+
+        // Add histogram display
+        tabbedDisplay.addTab("Histogram", &histogramDisplay);
+
         // Setup waveform display
         waveformDisplay.setSeekCallback([this](double position)
         {
@@ -194,6 +215,7 @@ private:
         audioEngine.setSpectrumCallback([this](float sample)
         {
             spectrumDisplay.pushNextSampleIntoFifo(sample);
+            histogramDisplay.pushSample(sample);
         });
 
         // Tab changed callback
@@ -209,18 +231,24 @@ private:
         addAndMakeVisible(rightPanelContainer);
 
         // Add level meter at top
-        rightPanelContainer.addPanel(&levelMeter, 0.33, 200, -1, "Levels");
+        rightPanelContainer.addPanel(&levelMeter, 0.25, 200, -1, "Levels");
 
         // Add true peak meter
-        rightPanelContainer.addPanel(&truePeakMeter, 0.33, 150, -1, "True Peak");
+        rightPanelContainer.addPanel(&truePeakMeter, 0.25, 150, -1, "True Peak");
 
         // Add phase meter
-        rightPanelContainer.addPanel(&phaseMeter, 0.34, 150, -1, "Phase");
+        rightPanelContainer.addPanel(&phaseMeter, 0.25, 150, -1, "Phase");
+
+        // Add loudness meter
+        rightPanelContainer.addPanel(&loudnessMeter, 0.25, 200, -1, "Loudness");
 
         // Set level callback from audio engine
         audioEngine.setLevelCallback([this](float leftRMS, float leftPeak, float rightRMS, float rightPeak)
         {
             levelMeter.setLevels(leftRMS, leftPeak, rightRMS, rightPeak);
+
+            // Feed to vectorscope (using peak values as samples)
+            vectorscopeDisplay.pushSample(leftPeak, rightPeak);
         });
 
         // Set true peak callback from audio engine
@@ -233,6 +261,86 @@ private:
         audioEngine.setPhaseCorrelationCallback([this](float correlation)
         {
             phaseMeter.setCorrelation(correlation);
+        });
+
+        // Set loudness callback from audio engine
+        audioEngine.setLoudnessCallback([this](float integrated, float shortTerm, float momentary, float lra)
+        {
+            loudnessMeter.setIntegratedLoudness(integrated);
+            loudnessMeter.setShortTermLoudness(shortTerm);
+            loudnessMeter.setMomentaryLoudness(momentary);
+            loudnessMeter.setLoudnessRange(lra);
+        });
+    }
+
+    void setupRecordingPanel()
+    {
+        // Set input device info
+        recordingPanel.setInputDevice(audioEngine.getCurrentDeviceName());
+
+        // Recording button callbacks (placeholders for now)
+        recordingPanel.setRecordCallback([this]()
+        {
+            // TODO: Implement recording functionality
+            juce::AlertWindow::showMessageBoxAsync(
+                juce::AlertWindow::InfoIcon,
+                "Recording",
+                "Recording functionality will be implemented in a future update",
+                "OK"
+            );
+        });
+
+        recordingPanel.setStopCallback([this]()
+        {
+            recordingPanel.setRecordingState(RecordingPanel::RecordingState::Stopped);
+        });
+
+        recordingPanel.setPauseCallback([this]()
+        {
+            auto state = recordingPanel.getRecordingState();
+            if (state == RecordingPanel::RecordingState::Recording)
+                recordingPanel.setRecordingState(RecordingPanel::RecordingState::Paused);
+            else if (state == RecordingPanel::RecordingState::Paused)
+                recordingPanel.setRecordingState(RecordingPanel::RecordingState::Recording);
+        });
+    }
+
+    void setupPlaylistPanel()
+    {
+        // File selected callback
+        playlistPanel.setFileSelectedCallback([this](const juce::File& file)
+        {
+            if (audioEngine.loadFile(file))
+            {
+                deviceControlPanel.setLoadedFileName(audioEngine.getCurrentFileName());
+                deviceControlPanel.setPlayButtonEnabled(true);
+
+                // Load waveform display
+                waveformDisplay.loadFile(file, audioEngine.getFormatManager());
+
+                // Update file info panel
+                auto* reader = audioEngine.getFormatManager().createReaderFor(file);
+                if (reader != nullptr)
+                {
+                    fileInfoPanel.setFileInfo(file, reader);
+                    delete reader;
+                }
+
+                // Reset level update tracking
+                lastLevelUpdatePosition = -1.0;
+
+                // Update level meter at start position
+                updateLevelMeterAtPosition(0.0);
+                lastLevelUpdatePosition = 0.0;
+
+                // Auto-play if enabled
+                audioEngine.play();
+            }
+        });
+
+        playlistPanel.setPlaylistChangedCallback([this]()
+        {
+            // Update UI when playlist changes
         });
     }
 
@@ -252,6 +360,11 @@ private:
         keyboardHandler.registerCommand(
             juce::KeyPress('o', juce::ModifierKeys::commandModifier, 0),
             [this]() { loadAudioFile(); }
+        );
+
+        keyboardHandler.registerCommand(
+            juce::KeyPress(',', juce::ModifierKeys::commandModifier, 0),
+            [this]() { showSettings(); }
         );
 
         keyboardHandler.registerCommand(
@@ -316,6 +429,14 @@ private:
                 // Load waveform display
                 waveformDisplay.loadFile(file, audioEngine.getFormatManager());
 
+                // Update file info panel
+                auto* reader = audioEngine.getFormatManager().createReaderFor(file);
+                if (reader != nullptr)
+                {
+                    fileInfoPanel.setFileInfo(file, reader);
+                    delete reader;
+                }
+
                 // Reset level update tracking
                 lastLevelUpdatePosition = -1.0;
 
@@ -334,6 +455,29 @@ private:
             audioEngine.pause();
         else
             audioEngine.play();
+    }
+
+    void showSettings()
+    {
+        auto* settingsDialog = new SettingsDialog(audioEngine.getDeviceManager());
+
+        settingsDialog->setSettingsChangedCallback([this]()
+        {
+            // Update device info display
+            deviceControlPanel.setDeviceName(audioEngine.getCurrentDeviceName());
+            deviceControlPanel.setSampleRate(audioEngine.getCurrentSampleRate());
+            deviceControlPanel.setBufferSize(audioEngine.getCurrentBufferSize());
+        });
+
+        juce::DialogWindow::LaunchOptions options;
+        options.content.setOwned(settingsDialog);
+        options.dialogTitle = "Settings";
+        options.dialogBackgroundColour = juce::Colour(0xff1e1e1e);
+        options.escapeKeyTriggersCloseButton = true;
+        options.useNativeTitleBar = true;
+        options.resizable = false;
+
+        options.launchAsync();
     }
 
     void updateUI()
@@ -420,6 +564,8 @@ private:
         {
             menu.addItem(fileOpen, "Open Audio File...     Cmd+O");
             menu.addSeparator();
+            menu.addItem(fileSettings, "Settings...     Cmd+,");
+            menu.addSeparator();
             menu.addItem(fileExit, "Exit     Cmd+Q");
         }
         else if (menuIndex == 1)  // View menu
@@ -459,6 +605,10 @@ private:
         {
             case fileOpen:
                 loadAudioFile();
+                break;
+
+            case fileSettings:
+                showSettings();
                 break;
 
             case fileExit:
@@ -580,15 +730,22 @@ private:
 
     // UI Components
     PanelContainer mainPanelContainer { PanelContainer::Orientation::Horizontal };
+    PanelContainer leftPanelContainer { PanelContainer::Orientation::Vertical };
     PanelContainer rightPanelContainer { PanelContainer::Orientation::Vertical };
 
     DeviceControlPanel deviceControlPanel;
+    FileInfoPanel fileInfoPanel;
+    RecordingPanel recordingPanel;
+    PlaylistPanel playlistPanel;
     TabbedDisplayArea tabbedDisplay;
     WaveformDisplay waveformDisplay;
     SpectrumDisplay spectrumDisplay;
+    VectorscopeDisplay vectorscopeDisplay;
+    HistogramDisplay histogramDisplay;
     LevelMeter levelMeter;
     TruePeakMeter truePeakMeter;
     PhaseMeter phaseMeter;
+    LoudnessMeter loudnessMeter;
     juce::Label statusBar;
 
     KeyboardHandler keyboardHandler;

@@ -16,6 +16,7 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <atomic>
 #include <functional>
+#include <vector>
 
 class AudioEngine : public juce::AudioIODeviceCallback,
                     public juce::ChangeListener
@@ -81,6 +82,9 @@ public:
     juce::AudioFormatManager& getFormatManager() { return formatManager; }
     juce::File getCurrentFile() const { return currentFile; }
 
+    // Device manager access for settings dialog
+    juce::AudioDeviceManager& getDeviceManager() { return deviceManager; }
+
     //==========================================================================
     // Callbacks
     using ErrorCallback = std::function<void(const juce::String&)>;
@@ -97,6 +101,9 @@ public:
 
     using PhaseCorrelationCallback = std::function<void(float)>;  // correlation coefficient
     void setPhaseCorrelationCallback(PhaseCorrelationCallback callback) { phaseCorrelationCallback = callback; }
+
+    using LoudnessCallback = std::function<void(float, float, float, float)>;  // integrated, short-term, momentary, LRA
+    void setLoudnessCallback(LoudnessCallback callback) { loudnessCallback = callback; }
 
     //==========================================================================
     // AudioIODeviceCallback implementation
@@ -137,10 +144,20 @@ private:
     SpectrumCallback spectrumCallback;
     TruePeakCallback truePeakCallback;
     PhaseCorrelationCallback phaseCorrelationCallback;
+    LoudnessCallback loudnessCallback;
 
     bool initialized { false };
     double preparedSampleRate { 0.0 };
     int preparedBlockSize { 0 };
+
+    // Loudness measurement state
+    std::vector<float> loudnessBuffer;           // Circular buffer for loudness blocks
+    int loudnessBufferIndex { 0 };
+    double sumSquaredSamples { 0.0 };            // For integrated loudness
+    int totalSampleCount { 0 };
+    static constexpr int MOMENTARY_BLOCKS = 4;   // 400ms / 100ms blocks
+    static constexpr int SHORT_TERM_BLOCKS = 30; // 3s / 100ms blocks
+    static constexpr int BLOCK_SIZE_MS = 100;    // 100ms blocks
 
     //==========================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioEngine)

@@ -9,6 +9,7 @@
 */
 
 #include "AudioEngine.h"
+#include <algorithm>
 
 //==============================================================================
 AudioEngine::AudioEngine()
@@ -418,6 +419,118 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
         }
 
         phaseCorrelationCallback(correlation);
+    }
+
+    // Calculate and send loudness (if callback is set)
+    if (loudnessCallback && numOutputChannels > 0 && playState.load() == PlayState::Playing)
+    {
+        // Initialize loudness buffer if needed
+        if (loudnessBuffer.empty() && preparedSampleRate > 0)
+        {
+            int blockSamples = (int)(preparedSampleRate * BLOCK_SIZE_MS / 1000.0);
+            int numBlocks = SHORT_TERM_BLOCKS + 10;  // Extra space for circular buffer
+            loudnessBuffer.resize(numBlocks, -70.0f);
+        }
+
+        // Calculate mean square for this buffer (simplified without K-weighting)
+        double meanSquare = 0.0;
+        int sampleCount = 0;
+
+        for (int ch = 0; ch < numOutputChannels; ++ch)
+        {
+            const float* channelData = buffer.getReadPointer(ch);
+            for (int i = 0; i < numSamples; ++i)
+            {
+                double sample = channelData[i];
+                meanSquare += sample * sample;
+                sampleCount++;
+            }
+        }
+
+        if (sampleCount > 0)
+        {
+            meanSquare /= sampleCount;
+
+            // Convert to LUFS (simplified formula: LUFS = -0.691 + 10 * log10(MS))
+            float blockLoudness = -70.0f;
+            if (meanSquare > 0.0)
+            {
+                blockLoudness = -0.691f + 10.0f * std::log10((float)meanSquare);
+            }
+
+            // Store in circular buffer
+            loudnessBuffer[loudnessBufferIndex] = blockLoudness;
+            loudnessBufferIndex = (loudnessBufferIndex + 1) % loudnessBuffer.size();
+
+            // Calculate momentary loudness (400ms = 4 blocks)
+            float momentary = -70.0f;
+            double momentarySum = 0.0;
+            int momentaryCount = 0;
+            for (int i = 0; i < MOMENTARY_BLOCKS && i < loudnessBuffer.size(); ++i)
+            {
+                int idx = (loudnessBufferIndex - 1 - i + loudnessBuffer.size()) % loudnessBuffer.size();
+                if (loudnessBuffer[idx] > -69.0f)
+                {
+                    // Convert back to linear, sum, then convert to LUFS
+                    double linear = std::pow(10.0, (loudnessBuffer[idx] + 0.691) / 10.0);
+                    momentarySum += linear;
+                    momentaryCount++;
+                }
+            }
+            if (momentaryCount > 0)
+            {
+                momentary = -0.691f + 10.0f * std::log10((float)(momentarySum / momentaryCount));
+            }
+
+            // Calculate short-term loudness (3s = 30 blocks)
+            float shortTerm = -70.0f;
+            double shortTermSum = 0.0;
+            int shortTermCount = 0;
+            for (int i = 0; i < SHORT_TERM_BLOCKS && i < loudnessBuffer.size(); ++i)
+            {
+                int idx = (loudnessBufferIndex - 1 - i + loudnessBuffer.size()) % loudnessBuffer.size();
+                if (loudnessBuffer[idx] > -69.0f)
+                {
+                    double linear = std::pow(10.0, (loudnessBuffer[idx] + 0.691) / 10.0);
+                    shortTermSum += linear;
+                    shortTermCount++;
+                }
+            }
+            if (shortTermCount > 0)
+            {
+                shortTerm = -0.691f + 10.0f * std::log10((float)(shortTermSum / shortTermCount));
+            }
+
+            // Calculate integrated loudness (running average)
+            sumSquaredSamples += meanSquare;
+            totalSampleCount++;
+            float integrated = -70.0f;
+            if (totalSampleCount > 0)
+            {
+                double avgMeanSquare = sumSquaredSamples / totalSampleCount;
+                if (avgMeanSquare > 0.0)
+                {
+                    integrated = -0.691f + 10.0f * std::log10((float)avgMeanSquare);
+                }
+            }
+
+            // Calculate loudness range (simplified: difference between 95th and 10th percentile)
+            float lra = 0.0f;
+            if (loudnessBuffer.size() > 10)
+            {
+                std::vector<float> sortedBuffer = loudnessBuffer;
+                std::sort(sortedBuffer.begin(), sortedBuffer.end());
+                int idx10 = (int)(sortedBuffer.size() * 0.10f);
+                int idx95 = (int)(sortedBuffer.size() * 0.95f);
+                if (sortedBuffer[idx10] > -69.0f && sortedBuffer[idx95] > -69.0f)
+                {
+                    lra = sortedBuffer[idx95] - sortedBuffer[idx10];
+                }
+            }
+
+            // Send loudness values
+            loudnessCallback(integrated, shortTerm, momentary, lra);
+        }
     }
 }
 

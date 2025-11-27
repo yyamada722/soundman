@@ -13,7 +13,9 @@
       "Bash(start Soundman.exe)",
       "Bash(git push)",
       "Bash(start:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(python:*)",
+      "Bash(explorer \"D:\\Projects\\Soundman\\test-audio\\output\")"
     ],
     "deny": [],
     "ask": []

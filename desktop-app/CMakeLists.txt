@@ -55,7 +55,13 @@ target_sources(SoundmanDesktop PRIVATE
     Source/UI/SpectrumDisplay.cpp
     Source/UI/TruePeakMeter.cpp
     Source/UI/PhaseMeter.cpp
-    # Source/UI/SettingsPanel.cpp
+    Source/UI/LoudnessMeter.cpp
+    Source/UI/SettingsDialog.cpp
+    Source/UI/FileInfoPanel.cpp
+    Source/UI/RecordingPanel.cpp
+    Source/UI/PlaylistPanel.cpp
+    Source/UI/VectorscopeDisplay.cpp
+    Source/UI/HistogramDisplay.cpp
 
     # Data
     # Source/Data/DataManager.cpp
