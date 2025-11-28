@@ -315,6 +315,12 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
 
     mixerSource.getNextAudioBlock(channelInfo);
 
+    // Apply audio processing (filters, EQ, etc.)
+    if (audioProcessCallback)
+    {
+        audioProcessCallback(buffer);
+    }
+
     // Apply master gain
     float gain = masterGain.load();
     if (gain != 1.0f)

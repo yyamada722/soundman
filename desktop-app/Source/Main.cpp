@@ -18,6 +18,11 @@
 #include "UI/DeviceControlPanel.h"
 #include "UI/KeyboardHandler.h"
 #include "UI/SpectrumDisplay.h"
+#include "UI/SpectrogramDisplay.h"
+#include "UI/PitchDisplay.h"
+#include "UI/HarmonicsDisplay.h"
+#include "UI/MFCCDisplay.h"
+#include "UI/FilterPanel.h"
 #include "UI/TruePeakMeter.h"
 #include "UI/PhaseMeter.h"
 #include "UI/LoudnessMeter.h"
@@ -30,6 +35,8 @@
 #include "UI/MultiViewContainer.h"
 #include "UI/TimecodeDisplay.h"
 #include "UI/MasterGainControl.h"
+#include "UI/GeneratorPanel.h"
+#include "UI/ResponseAnalyzerPanel.h"
 
 //==============================================================================
 /**
@@ -200,6 +207,77 @@ private:
         // Add spectrum display as the second tab
         tabbedDisplay.addTab("Spectrum", &spectrumDisplay);
 
+        // Add spectrogram display (waterfall view)
+        tabbedDisplay.addTab("Spectrogram", &spectrogramDisplay);
+
+        // Add pitch display
+        tabbedDisplay.addTab("Pitch", &pitchDisplay);
+
+        // Add harmonics display
+        tabbedDisplay.addTab("Harmonics", &harmonicsDisplay);
+
+        // Add MFCC display
+        tabbedDisplay.addTab("MFCC", &mfccDisplay);
+
+        // Add filter/EQ panel
+        tabbedDisplay.addTab("Filter/EQ", &filterPanel);
+
+        // Prepare filter panel
+        filterPanel.prepare(audioEngine.getCurrentSampleRate(), audioEngine.getCurrentBufferSize());
+
+        // Set audio processing callback for filter/EQ and generator
+        audioEngine.setAudioProcessCallback([this](juce::AudioBuffer<float>& buffer)
+        {
+            // Apply filters and EQ
+            filterPanel.getFilter().process(buffer);
+            filterPanel.getEQ().process(buffer);
+
+            // Generate test signals (adds to buffer)
+            generatorPanel.processAudio(buffer);
+
+            // Push samples to THD analyzer
+            if (buffer.getNumChannels() > 0)
+            {
+                const float* data = buffer.getReadPointer(0);
+                for (int i = 0; i < buffer.getNumSamples(); ++i)
+                {
+                    generatorPanel.pushSampleForAnalysis(data[i]);
+                }
+            }
+
+            // IR measurement - process input and add sweep output
+            auto& irAnalyzer = responseAnalyzerPanel.getAnalyzer();
+            if (irAnalyzer.getState() == ImpulseResponseAnalyzer::MeasurementState::GeneratingSweep)
+            {
+                for (int i = 0; i < buffer.getNumSamples(); ++i)
+                {
+                    // Get input sample (use first channel)
+                    float inputSample = buffer.getNumChannels() > 0 ? buffer.getSample(0, i) : 0.0f;
+
+                    // Process and get sweep output
+                    float sweepOutput = irAnalyzer.processSample(inputSample);
+
+                    // Add sweep to output
+                    for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+                    {
+                        buffer.addSample(ch, i, sweepOutput);
+                    }
+                }
+            }
+        });
+
+        // Add generator panel
+        tabbedDisplay.addTab("Generator", &generatorPanel);
+
+        // Prepare generator panel
+        generatorPanel.prepare(audioEngine.getCurrentSampleRate(), audioEngine.getCurrentBufferSize());
+
+        // Add response analyzer panel (IR/FR measurement)
+        tabbedDisplay.addTab("IR/FR Analyzer", &responseAnalyzerPanel);
+
+        // Prepare response analyzer panel
+        responseAnalyzerPanel.prepare(audioEngine.getCurrentSampleRate(), audioEngine.getCurrentBufferSize());
+
         // Add vectorscope display
         tabbedDisplay.addTab("Vectorscope", &vectorscopeDisplay);
 
@@ -224,6 +302,10 @@ private:
         audioEngine.setSpectrumCallback([this](float sample)
         {
             spectrumDisplay.pushNextSampleIntoFifo(sample);
+            spectrogramDisplay.pushNextSampleIntoFifo(sample);
+            pitchDisplay.pushSample(sample);
+            harmonicsDisplay.pushSample(sample);
+            mfccDisplay.pushSample(sample);
             histogramDisplay.pushSample(sample);
 
             // Feed to multi-view container components
@@ -768,6 +850,13 @@ private:
     TabbedDisplayArea tabbedDisplay;
     WaveformDisplay waveformDisplay;
     SpectrumDisplay spectrumDisplay;
+    SpectrogramDisplay spectrogramDisplay;
+    PitchDisplay pitchDisplay;
+    HarmonicsDisplay harmonicsDisplay;
+    MFCCDisplay mfccDisplay;
+    FilterPanel filterPanel;
+    GeneratorPanel generatorPanel;
+    ResponseAnalyzerPanel responseAnalyzerPanel;
     VectorscopeDisplay vectorscopeDisplay;
     HistogramDisplay histogramDisplay;
     MultiViewContainer multiViewContainer;

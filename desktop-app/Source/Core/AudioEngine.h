@@ -126,6 +126,10 @@ public:
     using LoudnessCallback = std::function<void(float, float, float, float)>;  // integrated, short-term, momentary, LRA
     void setLoudnessCallback(LoudnessCallback callback) { loudnessCallback = callback; }
 
+    // Audio processing callback (for filters, EQ, etc.)
+    using AudioProcessCallback = std::function<void(juce::AudioBuffer<float>&)>;
+    void setAudioProcessCallback(AudioProcessCallback callback) { audioProcessCallback = callback; }
+
     //==========================================================================
     // AudioIODeviceCallback implementation
     void audioDeviceIOCallbackWithContext(const float* const* inputChannelData,
@@ -166,6 +170,7 @@ private:
     TruePeakCallback truePeakCallback;
     PhaseCorrelationCallback phaseCorrelationCallback;
     LoudnessCallback loudnessCallback;
+    AudioProcessCallback audioProcessCallback;
 
     bool initialized { false };
     double preparedSampleRate { 0.0 };

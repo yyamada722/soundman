@@ -53,6 +53,20 @@ target_sources(SoundmanDesktop PRIVATE
     Source/UI/DeviceControlPanel.cpp
     Source/UI/KeyboardHandler.cpp
     Source/UI/SpectrumDisplay.cpp
+    Source/UI/SpectrogramDisplay.cpp
+    Source/UI/PitchDisplay.cpp
+    Source/DSP/PitchDetector.cpp
+    Source/DSP/HarmonicsAnalyzer.cpp
+    Source/DSP/MFCCAnalyzer.cpp
+    Source/DSP/AudioFilter.cpp
+    Source/DSP/SignalGenerator.cpp
+    Source/DSP/THDAnalyzer.cpp
+    Source/DSP/ImpulseResponseAnalyzer.cpp
+    Source/UI/FilterPanel.cpp
+    Source/UI/GeneratorPanel.cpp
+    Source/UI/ResponseAnalyzerPanel.cpp
+    Source/UI/MFCCDisplay.cpp
+    Source/UI/HarmonicsDisplay.cpp
     Source/UI/TruePeakMeter.cpp
     Source/UI/PhaseMeter.cpp
     Source/UI/LoudnessMeter.cpp
