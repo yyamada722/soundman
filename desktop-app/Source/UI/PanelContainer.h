@@ -83,6 +83,7 @@ private:
     Orientation orientation;
     std::vector<Panel> panels;
     int dividerWidth { 4 };
+    int hitAreaWidth { 12 };  // Larger hit area for easier grabbing
 
     // Dragging state
     int draggingDivider { -1 };

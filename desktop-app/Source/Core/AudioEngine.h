@@ -37,6 +37,14 @@ public:
         Paused
     };
 
+    // Track selection for dual-track playback
+    enum class ActiveTrack
+    {
+        A,      // Play only Track A (main)
+        B,      // Play only Track B (comparison)
+        Both    // Mix both tracks
+    };
+
     //==========================================================================
     AudioEngine();
     ~AudioEngine() override;
@@ -47,11 +55,24 @@ public:
     void shutdown();
 
     //==========================================================================
-    // File operations
+    // File operations (Track A - main track)
     bool loadFile(const juce::File& file);
     void unloadFile();
     juce::String getCurrentFileName() const;
     bool hasFileLoaded() const;
+
+    // Track B operations (comparison track)
+    bool loadTrackB(const juce::File& file);
+    void unloadTrackB();
+    juce::String getTrackBFileName() const;
+    bool hasTrackBLoaded() const;
+    juce::File getTrackBFile() const { return trackBFile; }
+
+    // Dual track control
+    void setActiveTrack(ActiveTrack track);
+    ActiveTrack getActiveTrack() const { return activeTrack.load(); }
+    void setTrackMixBalance(float balance);  // 0.0 = A only, 1.0 = B only
+    float getTrackMixBalance() const { return trackMixBalance.load(); }
 
     //==========================================================================
     // Playback control
@@ -59,6 +80,16 @@ public:
     void pause();
     void stop();
     void setPosition(double position);  // 0.0 to 1.0
+    void setPositionSeconds(double seconds);  // Seek to time in seconds
+
+    //==========================================================================
+    // Loop/Range playback
+    void setLoopEnabled(bool enabled);
+    bool isLoopEnabled() const { return loopEnabled.load(); }
+
+    void setLoopRange(double startSeconds, double endSeconds);
+    double getLoopStart() const { return loopStartSeconds.load(); }
+    double getLoopEnd() const { return loopEndSeconds.load(); }
 
     //==========================================================================
     // Recording control
@@ -106,6 +137,10 @@ public:
     void setMasterGain(float gainLinear) { masterGain.store(gainLinear); }
     float getMasterGain() const { return masterGain.load(); }
 
+    // Dry/Wet mix control for A/B comparison
+    void setDryWetMix(float wetAmount) { dryWetMix.store(juce::jlimit(0.0f, 1.0f, wetAmount)); }
+    float getDryWetMix() const { return dryWetMix.load(); }
+
     //==========================================================================
     // Callbacks
     using ErrorCallback = std::function<void(const juce::String&)>;
@@ -129,6 +164,10 @@ public:
     // Audio processing callback (for filters, EQ, etc.)
     using AudioProcessCallback = std::function<void(juce::AudioBuffer<float>&)>;
     void setAudioProcessCallback(AudioProcessCallback callback) { audioProcessCallback = callback; }
+
+    // Device started callback (for preparing processors with correct sample rate)
+    using DeviceStartedCallback = std::function<void(double sampleRate, int blockSize)>;
+    void setDeviceStartedCallback(DeviceStartedCallback callback) { deviceStartedCallback = callback; }
 
     //==========================================================================
     // AudioIODeviceCallback implementation
@@ -155,14 +194,26 @@ private:
     //==========================================================================
     juce::AudioDeviceManager deviceManager;
     juce::AudioFormatManager formatManager;
-    juce::AudioTransportSource transportSource;
-    juce::MixerAudioSource mixerSource;
 
+    // Track A (main track)
+    juce::AudioTransportSource transportSource;
     std::unique_ptr<juce::AudioFormatReaderSource> readerSource;
     std::unique_ptr<juce::ResamplingAudioSource> resamplingSource;
+    juce::File currentFile;
+
+    // Track B (comparison track)
+    juce::AudioTransportSource transportSourceB;
+    std::unique_ptr<juce::AudioFormatReaderSource> readerSourceB;
+    juce::File trackBFile;
+
+    // Mixer for combining tracks
+    juce::MixerAudioSource mixerSource;
+
+    // Track selection and mixing
+    std::atomic<ActiveTrack> activeTrack { ActiveTrack::A };
+    std::atomic<float> trackMixBalance { 0.5f };  // 0.0 = A only, 1.0 = B only
 
     std::atomic<PlayState> playState { PlayState::Stopped };
-    juce::File currentFile;
 
     ErrorCallback errorCallback;
     LevelCallback levelCallback;
@@ -171,6 +222,7 @@ private:
     PhaseCorrelationCallback phaseCorrelationCallback;
     LoudnessCallback loudnessCallback;
     AudioProcessCallback audioProcessCallback;
+    DeviceStartedCallback deviceStartedCallback;
 
     bool initialized { false };
     double preparedSampleRate { 0.0 };
@@ -178,6 +230,14 @@ private:
 
     // Master gain control
     std::atomic<float> masterGain { 1.0f };  // Linear gain (1.0 = 0dB)
+
+    // Dry/Wet mix control (0.0 = dry, 1.0 = wet)
+    std::atomic<float> dryWetMix { 1.0f };  // Default to fully wet (processed)
+
+    // Loop/Range playback
+    std::atomic<bool> loopEnabled { false };
+    std::atomic<double> loopStartSeconds { 0.0 };
+    std::atomic<double> loopEndSeconds { 0.0 };
 
     // Recording state
     std::atomic<RecordState> recordState { RecordState::Stopped };

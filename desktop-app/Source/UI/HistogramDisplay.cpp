@@ -3,7 +3,7 @@
 
     HistogramDisplay.cpp
 
-    Audio amplitude histogram implementation
+    Audio amplitude histogram implementation - Optimized
 
   ==============================================================================
 */
@@ -15,7 +15,24 @@
 HistogramDisplay::HistogramDisplay()
 {
     histogram.resize(NUM_BINS, 0);
-    startTimer(30);  // ~30 fps
+
+    // Precompute bar colors
+    barColors.resize(NUM_BINS);
+    for (int i = 0; i < NUM_BINS; ++i)
+    {
+        float db = juce::jmap((float)i, 0.0f, (float)(NUM_BINS - 1), -60.0f, 0.0f);
+
+        if (db > -3.0f)
+            barColors[i] = juce::Colour(0xffcc3333);  // Red
+        else if (db > -10.0f)
+            barColors[i] = juce::Colour(0xffcccc33);  // Yellow
+        else if (db > -20.0f)
+            barColors[i] = juce::Colour(0xff33cc33);  // Green
+        else
+            barColors[i] = juce::Colour(0xff3366cc);  // Blue
+    }
+
+    startTimer(67);  // ~15 fps (reduced from 30)
 }
 
 HistogramDisplay::~HistogramDisplay()
@@ -26,8 +43,6 @@ HistogramDisplay::~HistogramDisplay()
 //==============================================================================
 void HistogramDisplay::pushSample(float sample)
 {
-    juce::ScopedLock lock(histogramLock);
-
     // Convert to dB and map to bin
     float absSample = std::abs(sample);
     if (absSample < 0.0001f)  // -80 dB threshold
@@ -39,6 +54,7 @@ void HistogramDisplay::pushSample(float sample)
     int bin = (int)juce::jmap(db, -60.0f, 0.0f, 0.0f, (float)(NUM_BINS - 1));
     bin = juce::jlimit(0, NUM_BINS - 1, bin);
 
+    juce::ScopedLock lock(histogramLock);
     histogram[bin]++;
 
     // Track max for scaling
@@ -68,20 +84,22 @@ void HistogramDisplay::paint(juce::Graphics& g)
     g.setColour(juce::Colour(0xff3a3a3a));
     g.drawRect(bounds, 1);
 
+    auto innerBounds = bounds.reduced(30, 20);
+
     // Draw grid
-    drawGrid(g, bounds.reduced(30, 20));
+    drawGrid(g, innerBounds);
 
     // Draw histogram
-    drawHistogram(g, bounds.reduced(30, 20));
+    drawHistogram(g, innerBounds);
 }
 
 void HistogramDisplay::drawGrid(juce::Graphics& g, const juce::Rectangle<int>& bounds)
 {
     g.setColour(juce::Colour(0xff2a2a2a));
-
-    // Horizontal grid lines (every 10 dB)
     g.setFont(juce::Font(9.0f));
-    for (int db = -60; db <= 0; db += 10)
+
+    // Vertical grid lines (every 20 dB for simplicity)
+    for (int db = -60; db <= 0; db += 20)
     {
         float x = juce::jmap((float)db, -60.0f, 0.0f,
                             (float)bounds.getX(), (float)bounds.getRight());
@@ -96,20 +114,10 @@ void HistogramDisplay::drawGrid(juce::Graphics& g, const juce::Rectangle<int>& b
         g.setColour(juce::Colour(0xff2a2a2a));
     }
 
-    // Vertical grid lines
-    int numHorizontalLines = 5;
-    for (int i = 0; i <= numHorizontalLines; ++i)
-    {
-        float y = juce::jmap((float)i, 0.0f, (float)numHorizontalLines,
-                            (float)bounds.getBottom(), (float)bounds.getY());
-
-        g.drawHorizontalLine((int)y, (float)bounds.getX(), (float)bounds.getRight());
-    }
-
-    // Axis labels
+    // Axis label
     g.setColour(juce::Colours::lightgrey);
     g.setFont(juce::Font(11.0f));
-    g.drawText("Amplitude (dB)", bounds.getX(), bounds.getBottom() + 15,
+    g.drawText("dB", bounds.getX(), bounds.getBottom() + 15,
               bounds.getWidth(), 15, juce::Justification::centred);
 }
 
@@ -121,6 +129,7 @@ void HistogramDisplay::drawHistogram(juce::Graphics& g, const juce::Rectangle<in
         return;
 
     float binWidth = bounds.getWidth() / (float)NUM_BINS;
+    float invMaxBin = 1.0f / (float)maxBinValue;
 
     for (int i = 0; i < NUM_BINS; ++i)
     {
@@ -128,30 +137,12 @@ void HistogramDisplay::drawHistogram(juce::Graphics& g, const juce::Rectangle<in
             continue;
 
         float x = bounds.getX() + i * binWidth;
-        float normalizedHeight = (float)histogram[i] / (float)maxBinValue;
+        float normalizedHeight = (float)histogram[i] * invMaxBin;
         float height = normalizedHeight * bounds.getHeight();
 
-        auto barBounds = juce::Rectangle<float>(x, bounds.getBottom() - height, binWidth, height);
-
-        // Color based on dB level
-        float db = juce::jmap((float)i, 0.0f, (float)(NUM_BINS - 1), -60.0f, 0.0f);
-        juce::Colour color;
-
-        if (db > -3.0f)
-            color = juce::Colour(0xffcc3333);  // Red
-        else if (db > -10.0f)
-            color = juce::Colour(0xffcccc33);  // Yellow
-        else if (db > -20.0f)
-            color = juce::Colour(0xff33cc33);  // Green
-        else
-            color = juce::Colour(0xff3366cc);  // Blue
-
-        g.setColour(color.withAlpha(0.8f));
-        g.fillRect(barBounds);
-
-        // Outline
-        g.setColour(color);
-        g.drawRect(barBounds, 0.5f);
+        // Use precomputed color
+        g.setColour(barColors[i].withAlpha(0.8f));
+        g.fillRect(x, (float)bounds.getBottom() - height, binWidth - 1.0f, height);
     }
 }
 
@@ -169,7 +160,7 @@ void HistogramDisplay::timerCallback()
         maxBinValue = 1;
         for (auto& bin : histogram)
         {
-            bin = (int)((float)bin * decay);
+            bin = static_cast<int>(static_cast<float>(bin) * decay);
             if (bin > maxBinValue)
                 maxBinValue = bin;
         }

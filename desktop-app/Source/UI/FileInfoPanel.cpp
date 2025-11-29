@@ -11,12 +11,44 @@
 #include "FileInfoPanel.h"
 
 //==============================================================================
+// Japanese font for display - try multiple fonts for compatibility
+static juce::Font getJapaneseFont(float height, int style = juce::Font::plain)
+{
+    // Try different Japanese fonts available on Windows
+    static juce::String cachedFontName;
+
+    if (cachedFontName.isEmpty())
+    {
+        juce::StringArray fontNames = juce::Font::findAllTypefaceNames();
+
+        // Priority list of Japanese fonts
+        const char* japaneseFonts[] = {
+            "Meiryo UI", "Meiryo", "Yu Gothic UI", "Yu Gothic",
+            "MS UI Gothic", "MS Gothic", "MS PGothic", nullptr
+        };
+
+        for (int i = 0; japaneseFonts[i] != nullptr; ++i)
+        {
+            if (fontNames.contains(japaneseFonts[i]))
+            {
+                cachedFontName = japaneseFonts[i];
+                break;
+            }
+        }
+
+        if (cachedFontName.isEmpty())
+            cachedFontName = juce::Font::getDefaultSansSerifFontName();
+    }
+
+    return juce::Font(cachedFontName, height, style);
+}
+
 FileInfoPanel::FileInfoPanel()
 {
     // Set up title
     addAndMakeVisible(titleLabel);
     titleLabel.setText("File Information", juce::dontSendNotification);
-    titleLabel.setFont(juce::Font(16.0f, juce::Font::bold));
+    titleLabel.setFont(getJapaneseFont(16.0f, juce::Font::bold));
     titleLabel.setColour(juce::Label::textColourId, juce::Colours::white);
     titleLabel.setJustificationType(juce::Justification::centred);
 
@@ -44,13 +76,13 @@ void FileInfoPanel::addInfoRow(const juce::String& name)
     auto* row = new InfoRow();
 
     row->labelName.setText(name + ":", juce::dontSendNotification);
-    row->labelName.setFont(juce::Font(13.0f, juce::Font::bold));
+    row->labelName.setFont(getJapaneseFont(13.0f, juce::Font::bold));
     row->labelName.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
     row->labelName.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(row->labelName);
 
     row->labelValue.setText("-", juce::dontSendNotification);
-    row->labelValue.setFont(juce::Font(13.0f));
+    row->labelValue.setFont(getJapaneseFont(13.0f));
     row->labelValue.setColour(juce::Label::textColourId, juce::Colours::white);
     row->labelValue.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(row->labelValue);
@@ -62,6 +94,8 @@ void FileInfoPanel::setInfoValue(int index, const juce::String& value)
 {
     if (index >= 0 && index < infoRows.size())
     {
+        // Re-apply Japanese font when setting value (ensures proper rendering)
+        infoRows[index]->labelValue.setFont(getJapaneseFont(13.0f));
         infoRows[index]->labelValue.setText(value, juce::dontSendNotification);
     }
 }

@@ -62,6 +62,8 @@ target_sources(SoundmanDesktop PRIVATE
     Source/DSP/SignalGenerator.cpp
     Source/DSP/THDAnalyzer.cpp
     Source/DSP/ImpulseResponseAnalyzer.cpp
+    Source/DSP/BPMDetector.cpp
+    Source/DSP/KeyDetector.cpp
     Source/UI/FilterPanel.cpp
     Source/UI/GeneratorPanel.cpp
     Source/UI/ResponseAnalyzerPanel.cpp
@@ -79,6 +81,24 @@ target_sources(SoundmanDesktop PRIVATE
     Source/UI/MultiViewContainer.cpp
     Source/UI/TimecodeDisplay.cpp
     Source/UI/MasterGainControl.cpp
+    Source/UI/BPMDisplay.cpp
+    Source/UI/KeyDisplay.cpp
+    Source/UI/AnalysisPanel.cpp
+    Source/UI/ToolsPanel.cpp
+    Source/UI/MetersPanel.cpp
+    Source/UI/SpectrumPanel.cpp
+    Source/UI/PluginHostPanel.cpp
+    Source/UI/ABCompareControl.cpp
+    Source/UI/CompareWaveformDisplay.cpp
+    Source/UI/TrackComparePanel.cpp
+    Source/UI/TransportControlPanel.cpp
+    Source/UI/AudioTimeline.cpp
+    Source/UI/MarkerPanel.cpp
+    Source/UI/TopInfoBar.cpp
+
+    # Core - Plugin Management
+    Source/Core/PluginManager.cpp
+    Source/Core/EffectChain.cpp
 
     # Data
     # Source/Data/DataManager.cpp
@@ -131,6 +151,11 @@ target_compile_definitions(SoundmanDesktop
         JUCE_ALSA=1
         JUCE_JACK=1
         JUCE_COREAUDIO=1
+
+        # Plugin Host Config
+        JUCE_PLUGINHOST_VST3=1
+        JUCE_PLUGINHOST_AU=1
+        JUCE_PLUGINHOST_LADSPA=1
 )
 
 # ======================================

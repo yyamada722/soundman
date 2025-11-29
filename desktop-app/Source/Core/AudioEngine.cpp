@@ -17,11 +17,9 @@ AudioEngine::AudioEngine()
     // Register audio formats
     formatManager.registerBasicFormats();  // WAV, AIFF
 
-    // Add transport source to mixer
-    mixerSource.addInputSource(&transportSource, false);
-
-    // Listen for transport state changes
+    // Listen for transport state changes (both tracks)
     transportSource.addChangeListener(this);
+    transportSourceB.addChangeListener(this);
 }
 
 AudioEngine::~AudioEngine()
@@ -131,22 +129,110 @@ bool AudioEngine::hasFileLoaded() const
 }
 
 //==============================================================================
+// Track B operations
+
+bool AudioEngine::loadTrackB(const juce::File& file)
+{
+    // Check if file exists
+    if (!file.existsAsFile())
+    {
+        showError("File not found: " + file.getFullPathName());
+        return false;
+    }
+
+    // Create reader for the file
+    auto* reader = formatManager.createReaderFor(file);
+    if (reader == nullptr)
+    {
+        showError("Unsupported audio format: " + file.getFileExtension());
+        return false;
+    }
+
+    // Stop Track B if playing
+    transportSourceB.stop();
+    transportSourceB.setSource(nullptr);
+
+    // Create new reader source
+    auto newSource = std::make_unique<juce::AudioFormatReaderSource>(reader, true);
+
+    // Set source to transport B
+    transportSourceB.setSource(newSource.get());
+
+    // Prepare if audio device is already running
+    if (preparedSampleRate > 0)
+    {
+        transportSourceB.prepareToPlay(preparedBlockSize, preparedSampleRate);
+    }
+
+    readerSourceB = std::move(newSource);
+    trackBFile = file;
+
+    return true;
+}
+
+void AudioEngine::unloadTrackB()
+{
+    transportSourceB.stop();
+    transportSourceB.setSource(nullptr);
+    readerSourceB.reset();
+    trackBFile = juce::File();
+}
+
+juce::String AudioEngine::getTrackBFileName() const
+{
+    return trackBFile.getFileName();
+}
+
+bool AudioEngine::hasTrackBLoaded() const
+{
+    return readerSourceB != nullptr;
+}
+
+void AudioEngine::setActiveTrack(ActiveTrack track)
+{
+    activeTrack.store(track);
+}
+
+void AudioEngine::setTrackMixBalance(float balance)
+{
+    trackMixBalance.store(juce::jlimit(0.0f, 1.0f, balance));
+}
+
+//==============================================================================
 void AudioEngine::play()
 {
-    if (!hasFileLoaded())
+    // Need at least one track loaded to play
+    if (!hasFileLoaded() && !hasTrackBLoaded())
         return;
 
     auto currentState = playState.load();
+    auto track = activeTrack.load();
 
     if (currentState == PlayState::Stopped)
     {
-        transportSource.setPosition(0.0);
-        transportSource.start();
+        // Reset positions
+        if (hasFileLoaded() && (track == ActiveTrack::A || track == ActiveTrack::Both))
+        {
+            transportSource.setPosition(0.0);
+            transportSource.start();
+        }
+
+        if (hasTrackBLoaded() && (track == ActiveTrack::B || track == ActiveTrack::Both))
+        {
+            transportSourceB.setPosition(0.0);
+            transportSourceB.start();
+        }
+
         playState = PlayState::Playing;
     }
     else if (currentState == PlayState::Paused)
     {
-        transportSource.start();
+        if (hasFileLoaded() && (track == ActiveTrack::A || track == ActiveTrack::Both))
+            transportSource.start();
+
+        if (hasTrackBLoaded() && (track == ActiveTrack::B || track == ActiveTrack::Both))
+            transportSourceB.start();
+
         playState = PlayState::Playing;
     }
 }
@@ -156,6 +242,7 @@ void AudioEngine::pause()
     if (playState.load() == PlayState::Playing)
     {
         transportSource.stop();
+        transportSourceB.stop();
         playState = PlayState::Paused;
     }
 }
@@ -166,20 +253,74 @@ void AudioEngine::stop()
     {
         transportSource.stop();
         transportSource.setPosition(0.0);
+        transportSourceB.stop();
+        transportSourceB.setPosition(0.0);
         playState = PlayState::Stopped;
     }
 }
 
 void AudioEngine::setPosition(double position)
 {
-    if (!hasFileLoaded())
-        return;
-
-    double duration = getDuration();
-    if (duration > 0.0)
+    // Set position for Track A
+    if (hasFileLoaded())
     {
-        transportSource.setPosition(position * duration);
+        double durationA = transportSource.getLengthInSeconds();
+        if (durationA > 0.0)
+        {
+            transportSource.setPosition(position * durationA);
+        }
     }
+
+    // Set position for Track B
+    if (hasTrackBLoaded())
+    {
+        double durationB = transportSourceB.getLengthInSeconds();
+        if (durationB > 0.0)
+        {
+            transportSourceB.setPosition(position * durationB);
+        }
+    }
+}
+
+void AudioEngine::setPositionSeconds(double seconds)
+{
+    // Set position in seconds for Track A
+    if (hasFileLoaded())
+    {
+        double durationA = transportSource.getLengthInSeconds();
+        seconds = juce::jlimit(0.0, durationA, seconds);
+        transportSource.setPosition(seconds);
+    }
+
+    // Set position for Track B (proportionally)
+    if (hasTrackBLoaded())
+    {
+        double durationA = hasFileLoaded() ? transportSource.getLengthInSeconds() : 1.0;
+        double durationB = transportSourceB.getLengthInSeconds();
+        if (durationA > 0.0 && durationB > 0.0)
+        {
+            double ratio = seconds / durationA;
+            transportSourceB.setPosition(ratio * durationB);
+        }
+    }
+}
+
+//==============================================================================
+// Loop/Range playback
+
+void AudioEngine::setLoopEnabled(bool enabled)
+{
+    loopEnabled.store(enabled);
+}
+
+void AudioEngine::setLoopRange(double startSeconds, double endSeconds)
+{
+    // Ensure start < end
+    if (startSeconds > endSeconds)
+        std::swap(startSeconds, endSeconds);
+
+    loopStartSeconds.store(startSeconds);
+    loopEndSeconds.store(endSeconds);
 }
 
 //==============================================================================
@@ -307,18 +448,131 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
     // Clear output buffers first
     buffer.clear();
 
-    // Get audio from mixer (which includes transport source)
+    // Get current track mode
+    auto track = activeTrack.load();
+
+    // Create channel info for getting audio
     juce::AudioSourceChannelInfo channelInfo;
     channelInfo.buffer = &buffer;
     channelInfo.startSample = 0;
     channelInfo.numSamples = numSamples;
 
-    mixerSource.getNextAudioBlock(channelInfo);
+    // Handle dual track playback based on active track setting
+    if (track == ActiveTrack::A && hasFileLoaded())
+    {
+        // Track A only
+        transportSource.getNextAudioBlock(channelInfo);
+    }
+    else if (track == ActiveTrack::B && hasTrackBLoaded())
+    {
+        // Track B only
+        transportSourceB.getNextAudioBlock(channelInfo);
+    }
+    else if (track == ActiveTrack::Both)
+    {
+        // Mix both tracks
+        float balance = trackMixBalance.load();
+        float gainA = 1.0f - balance;  // 0.0 -> 1.0, 1.0 -> 0.0
+        float gainB = balance;          // 0.0 -> 0.0, 1.0 -> 1.0
 
-    // Apply audio processing (filters, EQ, etc.)
+        // Get Track A audio
+        if (hasFileLoaded())
+        {
+            transportSource.getNextAudioBlock(channelInfo);
+            buffer.applyGain(gainA);
+        }
+
+        // Get Track B audio and mix
+        if (hasTrackBLoaded())
+        {
+            juce::AudioBuffer<float> bufferB(numOutputChannels, numSamples);
+            bufferB.clear();
+
+            juce::AudioSourceChannelInfo channelInfoB;
+            channelInfoB.buffer = &bufferB;
+            channelInfoB.startSample = 0;
+            channelInfoB.numSamples = numSamples;
+
+            transportSourceB.getNextAudioBlock(channelInfoB);
+
+            // Add Track B to output with gain
+            for (int ch = 0; ch < numOutputChannels; ++ch)
+            {
+                if (ch < bufferB.getNumChannels())
+                {
+                    buffer.addFrom(ch, 0, bufferB, ch, 0, numSamples, gainB);
+                }
+            }
+        }
+    }
+    else if (hasFileLoaded())
+    {
+        // Default: play Track A if available
+        transportSource.getNextAudioBlock(channelInfo);
+    }
+
+    // Check for loop point
+    if (loopEnabled.load() && playState.load() == PlayState::Playing)
+    {
+        double loopEnd = loopEndSeconds.load();
+        double loopStart = loopStartSeconds.load();
+
+        if (loopEnd > loopStart)
+        {
+            double currentPos = transportSource.getCurrentPosition();
+
+            if (currentPos >= loopEnd)
+            {
+                // Loop back to start
+                juce::MessageManager::callAsync([this, loopStart]()
+                {
+                    if (hasFileLoaded())
+                        transportSource.setPosition(loopStart);
+                    if (hasTrackBLoaded())
+                    {
+                        double durationA = hasFileLoaded() ? transportSource.getLengthInSeconds() : 1.0;
+                        double durationB = transportSourceB.getLengthInSeconds();
+                        if (durationA > 0.0 && durationB > 0.0)
+                        {
+                            double ratio = loopStart / durationA;
+                            transportSourceB.setPosition(ratio * durationB);
+                        }
+                    }
+                });
+            }
+        }
+    }
+
+    // Get dry/wet mix amount
+    float wetMix = dryWetMix.load();
+
+    // Save dry (original) buffer for A/B comparison
+    juce::AudioBuffer<float> dryBuffer;
+    if (wetMix < 1.0f && audioProcessCallback)
+    {
+        dryBuffer.makeCopyOf(buffer);
+    }
+
+    // Apply audio processing (filters, EQ, VST plugins, etc.)
     if (audioProcessCallback)
     {
         audioProcessCallback(buffer);
+    }
+
+    // Mix dry and wet signals based on dryWetMix
+    if (wetMix < 1.0f && dryBuffer.getNumChannels() > 0)
+    {
+        float dryMix = 1.0f - wetMix;
+
+        for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+        {
+            if (ch < dryBuffer.getNumChannels())
+            {
+                // buffer = wet * wetMix + dry * dryMix
+                buffer.applyGain(ch, 0, numSamples, wetMix);
+                buffer.addFrom(ch, 0, dryBuffer, ch, 0, numSamples, dryMix);
+            }
+        }
     }
 
     // Apply master gain
@@ -575,6 +829,10 @@ void AudioEngine::audioDeviceAboutToStart(juce::AudioIODevice* device)
     preparedBlockSize = device->getCurrentBufferSizeSamples();
 
     prepareToPlay(preparedSampleRate, preparedBlockSize);
+
+    // Notify listeners about device start (for preparing external processors)
+    if (deviceStartedCallback)
+        deviceStartedCallback(preparedSampleRate, preparedBlockSize);
 }
 
 void AudioEngine::audioDeviceStopped()
@@ -585,12 +843,46 @@ void AudioEngine::audioDeviceStopped()
 //==============================================================================
 void AudioEngine::changeListenerCallback(juce::ChangeBroadcaster* source)
 {
-    if (source == &transportSource)
+    // Check if playback has finished for Track A
+    if (source == &transportSource && playState.load() == PlayState::Playing)
     {
-        // Check if playback has finished
-        if (transportSource.hasStreamFinished() && playState.load() == PlayState::Playing)
+        auto track = activeTrack.load();
+        bool trackAFinished = transportSource.hasStreamFinished();
+        bool trackBFinished = !hasTrackBLoaded() || transportSourceB.hasStreamFinished();
+
+        // Stop only if both relevant tracks have finished
+        bool shouldStop = false;
+        if (track == ActiveTrack::A && trackAFinished)
+            shouldStop = true;
+        else if (track == ActiveTrack::B && trackBFinished)
+            shouldStop = true;
+        else if (track == ActiveTrack::Both && trackAFinished && trackBFinished)
+            shouldStop = true;
+
+        if (shouldStop)
         {
-            // Automatically stop when finished
+            juce::MessageManager::callAsync([this]()
+            {
+                stop();
+            });
+        }
+    }
+
+    // Check if playback has finished for Track B
+    if (source == &transportSourceB && playState.load() == PlayState::Playing)
+    {
+        auto track = activeTrack.load();
+        bool trackAFinished = !hasFileLoaded() || transportSource.hasStreamFinished();
+        bool trackBFinished = transportSourceB.hasStreamFinished();
+
+        bool shouldStop = false;
+        if (track == ActiveTrack::B && trackBFinished)
+            shouldStop = true;
+        else if (track == ActiveTrack::Both && trackAFinished && trackBFinished)
+            shouldStop = true;
+
+        if (shouldStop)
+        {
             juce::MessageManager::callAsync([this]()
             {
                 stop();
@@ -613,11 +905,13 @@ void AudioEngine::showError(const juce::String& message)
 
 void AudioEngine::prepareToPlay(double sampleRate, int blockSize)
 {
-    mixerSource.prepareToPlay(blockSize, sampleRate);
+    // Prepare Track A
     transportSource.prepareToPlay(blockSize, sampleRate);
-
     if (resamplingSource != nullptr)
         resamplingSource->prepareToPlay(blockSize, sampleRate);
+
+    // Prepare Track B
+    transportSourceB.prepareToPlay(blockSize, sampleRate);
 }
 
 //==============================================================================
@@ -718,9 +1012,11 @@ void AudioEngine::resumeRecording()
 
 void AudioEngine::releaseResources()
 {
+    // Release Track A
     transportSource.releaseResources();
-    mixerSource.releaseResources();
-
     if (resamplingSource != nullptr)
         resamplingSource->releaseResources();
+
+    // Release Track B
+    transportSourceB.releaseResources();
 }

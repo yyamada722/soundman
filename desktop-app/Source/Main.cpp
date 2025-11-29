@@ -17,12 +17,10 @@
 #include "UI/TabbedDisplayArea.h"
 #include "UI/DeviceControlPanel.h"
 #include "UI/KeyboardHandler.h"
-#include "UI/SpectrumDisplay.h"
-#include "UI/SpectrogramDisplay.h"
-#include "UI/PitchDisplay.h"
-#include "UI/HarmonicsDisplay.h"
-#include "UI/MFCCDisplay.h"
-#include "UI/FilterPanel.h"
+#include "UI/SpectrumPanel.h"
+#include "UI/AnalysisPanel.h"
+#include "UI/ToolsPanel.h"
+#include "UI/MetersPanel.h"
 #include "UI/TruePeakMeter.h"
 #include "UI/PhaseMeter.h"
 #include "UI/LoudnessMeter.h"
@@ -30,13 +28,66 @@
 #include "UI/FileInfoPanel.h"
 #include "UI/RecordingPanel.h"
 #include "UI/PlaylistPanel.h"
-#include "UI/VectorscopeDisplay.h"
-#include "UI/HistogramDisplay.h"
 #include "UI/MultiViewContainer.h"
 #include "UI/TimecodeDisplay.h"
 #include "UI/MasterGainControl.h"
-#include "UI/GeneratorPanel.h"
-#include "UI/ResponseAnalyzerPanel.h"
+#include "UI/PluginHostPanel.h"
+#include "UI/ABCompareControl.h"
+#include "UI/TrackComparePanel.h"
+#include "UI/TransportControlPanel.h"
+#include "UI/AudioTimeline.h"
+#include "UI/MarkerPanel.h"
+#include "UI/TopInfoBar.h"
+
+//==============================================================================
+/**
+    Custom LookAndFeel with Japanese font support
+*/
+class JapaneseLookAndFeel : public juce::LookAndFeel_V4
+{
+public:
+    JapaneseLookAndFeel()
+    {
+        // Find a Japanese font
+        juce::StringArray fontNames = juce::Font::findAllTypefaceNames();
+
+        const char* japaneseFonts[] = {
+            "Meiryo UI", "Meiryo", "Yu Gothic UI", "Yu Gothic",
+            "MS UI Gothic", "MS Gothic", "MS PGothic", nullptr
+        };
+
+        for (int i = 0; japaneseFonts[i] != nullptr; ++i)
+        {
+            if (fontNames.contains(japaneseFonts[i]))
+            {
+                japaneseFontName = japaneseFonts[i];
+                break;
+            }
+        }
+
+        if (japaneseFontName.isEmpty())
+            japaneseFontName = juce::Font::getDefaultSansSerifFontName();
+
+        // Set default typeface
+        setDefaultSansSerifTypeface(juce::Typeface::createSystemTypefaceFor(
+            juce::Font(japaneseFontName, 12.0f, juce::Font::plain)));
+    }
+
+    juce::Typeface::Ptr getTypefaceForFont(const juce::Font& font) override
+    {
+        // Always use Japanese font for any font request
+        juce::Font japaneseFont(japaneseFontName, font.getHeight(), font.getStyleFlags());
+        return juce::Typeface::createSystemTypefaceFor(japaneseFont);
+    }
+
+    juce::Font getLabelFont(juce::Label& label) override
+    {
+        return juce::Font(japaneseFontName, label.getFont().getHeight(), label.getFont().getStyleFlags());
+    }
+
+private:
+    juce::String japaneseFontName;
+};
 
 //==============================================================================
 /**
@@ -76,6 +127,10 @@ public:
     //==========================================================================
     MainComponent()
     {
+        // Apply Japanese LookAndFeel for proper Japanese text rendering
+        setLookAndFeel(&japaneseLookAndFeel);
+        juce::LookAndFeel::setDefaultLookAndFeel(&japaneseLookAndFeel);
+
         // Initialize Audio Engine
         if (!audioEngine.initialize())
         {
@@ -101,6 +156,9 @@ public:
         // Setup UI components
         setupPanels();
         setupDevicePanel();
+        setupTransportPanel();
+        setupAudioTimeline();
+        setupMarkerPanel();
         setupCenterDisplay();
         setupRightPanel();
         setupRecordingPanel();
@@ -119,36 +177,28 @@ public:
     {
         stopTimer();
         audioEngine.shutdown();
+        setLookAndFeel(nullptr);
     }
 
     //==========================================================================
     void paint(juce::Graphics& g) override
     {
         g.fillAll(juce::Colour(0xff2a2a2a));
-
-        // Title bar
-        g.setColour(juce::Colours::white);
-        g.setFont(juce::Font(24.0f, juce::Font::bold));
-        g.drawText("Soundman Desktop", getLocalBounds().removeFromTop(60),
-                   juce::Justification::centred, true);
-
-        // Version
-        g.setFont(juce::Font(12.0f));
-        g.setColour(juce::Colours::grey);
-        g.drawText("Version 0.2.0 (Phase 2 - Modular UI)", getLocalBounds().removeFromTop(85),
-                   juce::Justification::centred, true);
     }
 
     void resized() override
     {
         auto bounds = getLocalBounds();
-        bounds.removeFromTop(100);  // Skip title area
 
-        // Main panel container takes the rest
-        mainPanelContainer.setBounds(bounds.reduced(0, 0).withTrimmedBottom(30));
+        // TopInfoBar at the very top (50 pixels high)
+        topInfoBar.setBounds(bounds.removeFromTop(50));
 
         // Status bar at bottom
-        statusBar.setBounds(bounds.removeFromBottom(30).reduced(10, 0));
+        auto statusBounds = bounds.removeFromBottom(24);
+        statusBar.setBounds(statusBounds.reduced(10, 0));
+
+        // Main panel container takes the rest
+        mainPanelContainer.setBounds(bounds);
     }
 
     void timerCallback() override
@@ -161,16 +211,21 @@ private:
     //==========================================================================
     void setupPanels()
     {
+        // Top info bar (Logic/Pro Tools style)
+        addAndMakeVisible(topInfoBar);
+        setupTopInfoBar();
+
         // Create main 3-column layout
         addAndMakeVisible(mainPanelContainer);
 
-        // Left panel: Device controls, file info, recording, and playlist
+        // Left panel: Device controls, markers, recording, and playlist
+        // (Transport is now in TopInfoBar)
         addAndMakeVisible(leftPanelContainer);
-        leftPanelContainer.addPanel(&deviceControlPanel, 0.25, 200, -1, "Device");
-        leftPanelContainer.addPanel(&fileInfoPanel, 0.25, 250, -1, "File Info");
-        leftPanelContainer.addPanel(&recordingPanel, 0.25, 250, -1, "Recording");
-        leftPanelContainer.addPanel(&playlistPanel, 0.25, 250, -1, "Playlist");
-        mainPanelContainer.addPanel(&leftPanelContainer, 0.15, 220, 400, "Control");
+        leftPanelContainer.addPanel(&deviceControlPanel, 0.15, 100, -1, "Device");
+        leftPanelContainer.addPanel(&markerPanel, 0.30, 180, -1, "Markers");
+        leftPanelContainer.addPanel(&recordingPanel, 0.15, 100, -1, "Recording");
+        leftPanelContainer.addPanel(&playlistPanel, 0.40, 200, -1, "Playlist");
+        mainPanelContainer.addPanel(&leftPanelContainer, 0.18, 280, 450, "Control");
 
         // Center panel: Tabbed display area
         mainPanelContainer.addPanel(&tabbedDisplay, 0.60, 600, -1, "Display");
@@ -178,11 +233,11 @@ private:
         // Right panel: Level meters and analysis controls
         mainPanelContainer.addPanel(&rightPanelContainer, 0.25, 300, 500, "Analysis");
 
-        // Status bar
+        // Status bar - explicitly set Japanese font
         addAndMakeVisible(statusBar);
         statusBar.setText("Ready", juce::dontSendNotification);
         statusBar.setJustificationType(juce::Justification::centredLeft);
-        statusBar.setFont(juce::Font(12.0f));
+        statusBar.setFont(japaneseLookAndFeel.getLabelFont(statusBar));
     }
 
     void setupDevicePanel()
@@ -199,40 +254,213 @@ private:
         deviceControlPanel.setBufferSize(audioEngine.getCurrentBufferSize());
     }
 
+    void setupTransportPanel()
+    {
+        // Set initial sample rate
+        transportControlPanel.setSampleRate(audioEngine.getCurrentSampleRate());
+
+        // Seek to time callback
+        transportControlPanel.onSeekToTime = [this](double seconds)
+        {
+            audioEngine.setPositionSeconds(seconds);
+            updateLevelMeterAtPosition(seconds / audioEngine.getDuration());
+        };
+
+        // Loop enabled callback
+        transportControlPanel.onLoopEnabledChanged = [this](bool enabled)
+        {
+            audioEngine.setLoopEnabled(enabled);
+            audioTimeline.setLoopEnabled(enabled);
+        };
+
+        // Loop range callback
+        transportControlPanel.onLoopRangeChanged = [this](double startSeconds, double endSeconds)
+        {
+            audioEngine.setLoopRange(startSeconds, endSeconds);
+            audioTimeline.setLoopRegion(startSeconds, endSeconds);
+        };
+    }
+
+    void setupAudioTimeline()
+    {
+        // Position changed callback
+        audioTimeline.onPositionChanged = [this](double position)
+        {
+            audioEngine.setPosition(position);
+            updateLevelMeterAtPosition(position);
+        };
+
+        // Selection changed callback
+        audioTimeline.onSelectionChanged = [this](double startSeconds, double endSeconds)
+        {
+            // Update transport panel with selection
+            DBG("Selection: " + juce::String(startSeconds, 2) + " - " + juce::String(endSeconds, 2));
+        };
+
+        // Loop region changed callback
+        audioTimeline.onLoopRegionChanged = [this](double startSeconds, double endSeconds)
+        {
+            audioEngine.setLoopRange(startSeconds, endSeconds);
+            transportControlPanel.setLoopRange(startSeconds, endSeconds);
+        };
+
+        // Marker clicked callback
+        audioTimeline.onMarkerClicked = [this](int markerId)
+        {
+            audioTimeline.jumpToMarker(markerId);
+        };
+
+        // Marker added from timeline callback
+        audioTimeline.onMarkerAdded = [this](int id, double timeSeconds, const juce::String& name)
+        {
+            markerPanel.addMarker(id, name, timeSeconds);
+        };
+    }
+
+    void setupMarkerPanel()
+    {
+        // Set duration when file is loaded (handled in loadFile callbacks)
+
+        // Get current position callback
+        markerPanel.onGetCurrentPosition = [this]() -> double
+        {
+            return audioEngine.getPosition() * audioEngine.getDuration();
+        };
+
+        // Add marker callback - sync to timeline with same ID
+        markerPanel.onAddMarker = [this](int id, double timeSeconds, const juce::String& name)
+        {
+            audioTimeline.addMarkerWithId(id, timeSeconds, name, juce::Colours::yellow);
+        };
+
+        // Remove marker callback - sync to timeline
+        markerPanel.onRemoveMarker = [this](int id)
+        {
+            audioTimeline.removeMarker(id);
+        };
+
+        // Marker changed callback - sync to timeline
+        markerPanel.onMarkerChanged = [this](int id, const juce::String& name, double timeSeconds)
+        {
+            audioTimeline.updateMarker(id, name, timeSeconds);
+        };
+
+        // Jump to marker callback
+        markerPanel.onJumpToMarker = [this](int id)
+        {
+            audioTimeline.jumpToMarker(id);
+        };
+    }
+
     void setupCenterDisplay()
     {
-        // Add waveform display as the first tab
+        // Organized tabs: 15 tabs -> 5 main categories
+        // 1. Waveform - main view
         tabbedDisplay.addTab("Waveform", &waveformDisplay);
 
-        // Add spectrum display as the second tab
-        tabbedDisplay.addTab("Spectrum", &spectrumDisplay);
+        // 2. Spectrum - contains Spectrum + Spectrogram
+        tabbedDisplay.addTab("Spectrum", &spectrumPanel);
 
-        // Add spectrogram display (waterfall view)
-        tabbedDisplay.addTab("Spectrogram", &spectrogramDisplay);
+        // 3. Analysis - contains Pitch, BPM, Key, Harmonics, MFCC
+        tabbedDisplay.addTab("Analysis", &analysisPanel);
 
-        // Add pitch display
-        tabbedDisplay.addTab("Pitch", &pitchDisplay);
+        // 4. Meters - contains Vectorscope, Histogram
+        tabbedDisplay.addTab("Meters", &metersPanel);
 
-        // Add harmonics display
-        tabbedDisplay.addTab("Harmonics", &harmonicsDisplay);
+        // 5. Tools - contains Filter/EQ, Generator, IR/FR
+        tabbedDisplay.addTab("Tools", &toolsPanel);
 
-        // Add MFCC display
-        tabbedDisplay.addTab("MFCC", &mfccDisplay);
+        // 6. Plugins - VST3 host panel
+        tabbedDisplay.addTab("Plugins", &pluginHostPanel);
 
-        // Add filter/EQ panel
-        tabbedDisplay.addTab("Filter/EQ", &filterPanel);
+        // 7. Compare - Dual track comparison
+        tabbedDisplay.addTab("Compare", &trackComparePanel);
 
-        // Prepare filter panel
-        filterPanel.prepare(audioEngine.getCurrentSampleRate(), audioEngine.getCurrentBufferSize());
+        // 8. Timeline - Professional audio timeline
+        tabbedDisplay.addTab("Timeline", &audioTimeline);
 
-        // Set audio processing callback for filter/EQ and generator
+        // Setup track compare panel
+        trackComparePanel.setFormatManager(&audioEngine.getFormatManager());
+
+        // Connect TrackComparePanel to AudioEngine for dual-track playback
+        trackComparePanel.onTrackLoaded = [this](const juce::File& file, TrackComparePanel::ActiveTrack track)
+        {
+            if (track == TrackComparePanel::ActiveTrack::A)
+            {
+                // Track A loaded via compare panel - also load to main audio engine Track A
+                audioEngine.loadFile(file);
+                deviceControlPanel.setLoadedFileName(audioEngine.getCurrentFileName());
+                deviceControlPanel.setPlayButtonEnabled(true);
+                waveformDisplay.loadFile(file, audioEngine.getFormatManager());
+
+                // Update file info panel
+                auto* reader = audioEngine.getFormatManager().createReaderFor(file);
+                if (reader != nullptr)
+                {
+                    fileInfoPanel.setFileInfo(file, reader);
+                    delete reader;
+                }
+            }
+            else if (track == TrackComparePanel::ActiveTrack::B)
+            {
+                // Track B loaded - load to audio engine Track B
+                audioEngine.loadTrackB(file);
+            }
+        };
+
+        trackComparePanel.onActiveTrackChanged = [this](TrackComparePanel::ActiveTrack track)
+        {
+            // Convert TrackComparePanel::ActiveTrack to AudioEngine::ActiveTrack
+            AudioEngine::ActiveTrack engineTrack = AudioEngine::ActiveTrack::A;
+            switch (track)
+            {
+                case TrackComparePanel::ActiveTrack::A:
+                    engineTrack = AudioEngine::ActiveTrack::A;
+                    break;
+                case TrackComparePanel::ActiveTrack::B:
+                    engineTrack = AudioEngine::ActiveTrack::B;
+                    break;
+                case TrackComparePanel::ActiveTrack::Both:
+                    engineTrack = AudioEngine::ActiveTrack::Both;
+                    break;
+            }
+            audioEngine.setActiveTrack(engineTrack);
+        };
+
+        trackComparePanel.onMixBalanceChanged = [this](float balance)
+        {
+            audioEngine.setTrackMixBalance(balance);
+        };
+
+        trackComparePanel.onSeek = [this](double position)
+        {
+            audioEngine.setPosition(position);
+        };
+
+        // Prepare all panels
+        double sampleRate = audioEngine.getCurrentSampleRate();
+        int bufferSize = audioEngine.getCurrentBufferSize();
+
+        analysisPanel.prepare(sampleRate, bufferSize);
+        toolsPanel.prepare(sampleRate, bufferSize);
+        pluginHostPanel.prepare(sampleRate, bufferSize);
+
+        // Set audio processing callback
         audioEngine.setAudioProcessCallback([this](juce::AudioBuffer<float>& buffer)
         {
+            auto& filterPanel = toolsPanel.getFilterPanel();
+            auto& generatorPanel = toolsPanel.getGeneratorPanel();
+            auto& responsePanel = toolsPanel.getResponseAnalyzerPanel();
+
             // Apply filters and EQ
             filterPanel.getFilter().process(buffer);
             filterPanel.getEQ().process(buffer);
 
-            // Generate test signals (adds to buffer)
+            // Process through VST3 effect chain
+            juce::MidiBuffer midiBuffer;
+            pluginHostPanel.getEffectChain().processBlock(buffer, midiBuffer);
+
+            // Generate test signals
             generatorPanel.processAudio(buffer);
 
             // Push samples to THD analyzer
@@ -245,50 +473,32 @@ private:
                 }
             }
 
-            // IR measurement - process input and add sweep output
-            auto& irAnalyzer = responseAnalyzerPanel.getAnalyzer();
+            // IR measurement
+            auto& irAnalyzer = responsePanel.getAnalyzer();
             if (irAnalyzer.getState() == ImpulseResponseAnalyzer::MeasurementState::GeneratingSweep)
             {
                 for (int i = 0; i < buffer.getNumSamples(); ++i)
                 {
-                    // Get input sample (use first channel)
                     float inputSample = buffer.getNumChannels() > 0 ? buffer.getSample(0, i) : 0.0f;
-
-                    // Process and get sweep output
                     float sweepOutput = irAnalyzer.processSample(inputSample);
-
-                    // Add sweep to output
                     for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
                     {
                         buffer.addSample(ch, i, sweepOutput);
                     }
                 }
             }
+
+            // BPM and Key detection
+            analysisPanel.processBlock(buffer);
         });
 
-        // Add generator panel
-        tabbedDisplay.addTab("Generator", &generatorPanel);
-
-        // Prepare generator panel
-        generatorPanel.prepare(audioEngine.getCurrentSampleRate(), audioEngine.getCurrentBufferSize());
-
-        // Add response analyzer panel (IR/FR measurement)
-        tabbedDisplay.addTab("IR/FR Analyzer", &responseAnalyzerPanel);
-
-        // Prepare response analyzer panel
-        responseAnalyzerPanel.prepare(audioEngine.getCurrentSampleRate(), audioEngine.getCurrentBufferSize());
-
-        // Add vectorscope display
-        tabbedDisplay.addTab("Vectorscope", &vectorscopeDisplay);
-
-        // Add histogram display
-        tabbedDisplay.addTab("Histogram", &histogramDisplay);
-
-        // Add multi-view container
-        tabbedDisplay.addTab("Multi-View", &multiViewContainer);
-
-        // Add timecode display
-        tabbedDisplay.addTab("Timecode", &timecodeDisplay);
+        // Set device started callback to prepare effect chain with correct sample rate
+        audioEngine.setDeviceStartedCallback([this](double sampleRate, int blockSize)
+        {
+            pluginHostPanel.prepare(sampleRate, blockSize);
+            analysisPanel.prepare(sampleRate, blockSize);
+            toolsPanel.prepare(sampleRate, blockSize);
+        });
 
         // Setup waveform display
         waveformDisplay.setSeekCallback([this](double position)
@@ -301,14 +511,16 @@ private:
         // Setup spectrum analyzer callback from audio engine
         audioEngine.setSpectrumCallback([this](float sample)
         {
-            spectrumDisplay.pushNextSampleIntoFifo(sample);
-            spectrogramDisplay.pushNextSampleIntoFifo(sample);
-            pitchDisplay.pushSample(sample);
-            harmonicsDisplay.pushSample(sample);
-            mfccDisplay.pushSample(sample);
-            histogramDisplay.pushSample(sample);
+            // Spectrum panel
+            spectrumPanel.pushNextSampleIntoFifo(sample);
 
-            // Feed to multi-view container components
+            // Analysis panel
+            analysisPanel.pushSample(sample);
+
+            // Meters panel
+            metersPanel.pushSample(sample);
+
+            // Multi-view container
             if (auto* spectrum = multiViewContainer.getSpectrumDisplay())
                 spectrum->pushNextSampleIntoFifo(sample);
             if (auto* histogram = multiViewContainer.getHistogramDisplay())
@@ -327,20 +539,28 @@ private:
         // Right panel is divided into level meter and analysis controls
         addAndMakeVisible(rightPanelContainer);
 
-        // Add level meter at top
-        rightPanelContainer.addPanel(&levelMeter, 0.25, 200, -1, "Levels");
+        // Create horizontal container for Master Gain + Level Meter
+        metersRowContainer.addPanel(&masterGainControl, 0.35, 80, 120, "Gain");
+        metersRowContainer.addPanel(&levelMeter, 0.65, 120, -1, "Levels");
+        rightPanelContainer.addPanel(&metersRowContainer, 0.22, 150, -1, "");
 
         // Add true peak meter
-        rightPanelContainer.addPanel(&truePeakMeter, 0.25, 150, -1, "True Peak");
+        rightPanelContainer.addPanel(&truePeakMeter, 0.15, 100, -1, "True Peak");
 
         // Add phase meter
-        rightPanelContainer.addPanel(&phaseMeter, 0.25, 150, -1, "Phase");
+        rightPanelContainer.addPanel(&phaseMeter, 0.15, 100, -1, "Phase");
 
         // Add loudness meter
-        rightPanelContainer.addPanel(&loudnessMeter, 0.25, 200, -1, "Loudness");
+        rightPanelContainer.addPanel(&loudnessMeter, 0.20, 150, -1, "Loudness");
 
-        // Add master gain control
-        rightPanelContainer.addPanel(&masterGainControl, 0.0, 180, 180, "Master Gain");
+        // Add A/B comparison control
+        rightPanelContainer.addPanel(&abCompareControl, 0.15, 100, 150, "A/B Compare");
+
+        // Set A/B compare callbacks
+        abCompareControl.onMixChanged = [this](float wetAmount)
+        {
+            audioEngine.setDryWetMix(wetAmount);
+        };
 
         // Set master gain callback
         masterGainControl.onGainChanged = [this](float gainLinear)
@@ -353,8 +573,11 @@ private:
         {
             levelMeter.setLevels(leftRMS, leftPeak, rightRMS, rightPeak);
 
-            // Feed to vectorscope (using peak values as samples)
-            vectorscopeDisplay.pushSample(leftPeak, rightPeak);
+            // Update TopInfoBar mini meters
+            topInfoBar.setLevels(leftRMS, leftPeak, rightRMS, rightPeak);
+
+            // Feed to meters panel vectorscope
+            metersPanel.pushStereoSample(leftPeak, rightPeak);
 
             // Feed to multi-view container vectorscope
             if (auto* vectorscope = multiViewContainer.getVectorscopeDisplay())
@@ -428,11 +651,23 @@ private:
                 // Load waveform display
                 waveformDisplay.loadFile(file, audioEngine.getFormatManager());
 
-                // Update file info panel
+                // Also load to Track Compare Panel as Track A
+                trackComparePanel.loadTrackA(file);
+
+                // Load to AudioTimeline
+                audioTimeline.loadFile(file, audioEngine.getFormatManager());
+
+                // Update marker panel duration and clear markers for new file
+                markerPanel.setDuration(audioEngine.getDuration());
+                markerPanel.clearAllMarkers();
+                audioTimeline.clearAllMarkers();
+
+                // Update file info panel and TopInfoBar
                 auto* reader = audioEngine.getFormatManager().createReaderFor(file);
                 if (reader != nullptr)
                 {
                     fileInfoPanel.setFileInfo(file, reader);
+                    topInfoBar.setFileInfo(file, reader);
                     delete reader;
                 }
 
@@ -465,6 +700,11 @@ private:
         keyboardHandler.registerCommand(
             juce::KeyPress('s', juce::ModifierKeys::noModifiers, 0),
             [this]() { audioEngine.stop(); }
+        );
+
+        keyboardHandler.registerCommand(
+            juce::KeyPress('a', juce::ModifierKeys::noModifiers, 0),
+            [this]() { abCompareControl.toggleAB(); }
         );
 
         keyboardHandler.registerCommand(
@@ -513,6 +753,50 @@ private:
         // This component provides the MenuBarModel implementation
     }
 
+    void setupTopInfoBar()
+    {
+        // Initialize with device info
+        topInfoBar.setDeviceName(audioEngine.getCurrentDeviceName());
+        topInfoBar.setSampleRate(audioEngine.getCurrentSampleRate());
+        topInfoBar.setBufferSize(audioEngine.getCurrentBufferSize());
+
+        // Transport callbacks
+        topInfoBar.onPlay = [this]() { audioEngine.play(); };
+        topInfoBar.onPause = [this]() { audioEngine.pause(); };
+        topInfoBar.onStop = [this]() { audioEngine.stop(); };
+        topInfoBar.onSkipToStart = [this]() { audioEngine.setPosition(0.0); };
+        topInfoBar.onSkipToEnd = [this]() { audioEngine.setPosition(1.0); };
+
+        topInfoBar.onSeek = [this](double seconds)
+        {
+            double position = seconds / audioEngine.getDuration();
+            audioEngine.setPosition(juce::jlimit(0.0, 1.0, position));
+        };
+
+        topInfoBar.onToggleLoop = [this]()
+        {
+            bool newState = !audioEngine.isLoopEnabled();
+            audioEngine.setLoopEnabled(newState);
+            topInfoBar.setLoopEnabled(newState);
+            audioTimeline.setLoopEnabled(newState);
+        };
+
+        topInfoBar.onRecord = [this]()
+        {
+            // TODO: Implement recording
+            juce::AlertWindow::showMessageBoxAsync(
+                juce::AlertWindow::InfoIcon,
+                "Recording",
+                "Recording functionality will be implemented in a future update",
+                "OK"
+            );
+        };
+
+        // Utility button callbacks
+        topInfoBar.onOpenFile = [this]() { loadAudioFile(); };
+        topInfoBar.onSettings = [this]() { showSettings(); };
+    }
+
     //==========================================================================
     void loadAudioFile()
     {
@@ -539,11 +823,23 @@ private:
                 // Load waveform display
                 waveformDisplay.loadFile(file, audioEngine.getFormatManager());
 
-                // Update file info panel
+                // Also load to Track Compare Panel as Track A
+                trackComparePanel.loadTrackA(file);
+
+                // Load to AudioTimeline
+                audioTimeline.loadFile(file, audioEngine.getFormatManager());
+
+                // Update marker panel duration and clear markers for new file
+                markerPanel.setDuration(audioEngine.getDuration());
+                markerPanel.clearAllMarkers();
+                audioTimeline.clearAllMarkers();
+
+                // Update file info panel and TopInfoBar
                 auto* reader = audioEngine.getFormatManager().createReaderFor(file);
                 if (reader != nullptr)
                 {
                     fileInfoPanel.setFileInfo(file, reader);
+                    topInfoBar.setFileInfo(file, reader);
                     delete reader;
                 }
 
@@ -577,6 +873,11 @@ private:
             deviceControlPanel.setDeviceName(audioEngine.getCurrentDeviceName());
             deviceControlPanel.setSampleRate(audioEngine.getCurrentSampleRate());
             deviceControlPanel.setBufferSize(audioEngine.getCurrentBufferSize());
+
+            // Update TopInfoBar device info
+            topInfoBar.setDeviceName(audioEngine.getCurrentDeviceName());
+            topInfoBar.setSampleRate(audioEngine.getCurrentSampleRate());
+            topInfoBar.setBufferSize(audioEngine.getCurrentBufferSize());
         });
 
         juce::DialogWindow::LaunchOptions options;
@@ -595,14 +896,17 @@ private:
         // Update button states
         auto state = audioEngine.getPlayState();
         bool hasFile = audioEngine.hasFileLoaded();
+        bool isPlaying = state == AudioEngine::PlayState::Playing;
 
-        deviceControlPanel.setPlayButtonEnabled(hasFile && state != AudioEngine::PlayState::Playing);
-        deviceControlPanel.setPauseButtonEnabled(state == AudioEngine::PlayState::Playing);
+        deviceControlPanel.setPlayButtonEnabled(hasFile && !isPlaying);
+        deviceControlPanel.setPauseButtonEnabled(isPlaying);
         deviceControlPanel.setStopButtonEnabled(state != AudioEngine::PlayState::Stopped);
 
-        // Update status bar
-        juce::String statusText;
+        // Update TopInfoBar state
+        topInfoBar.setPlaying(isPlaying);
 
+        // Update status bar (compact version - main info is now in TopInfoBar)
+        juce::String statusText;
         switch (state)
         {
             case AudioEngine::PlayState::Stopped:
@@ -619,26 +923,37 @@ private:
         if (hasFile)
         {
             double position = audioEngine.getPosition();
-            double duration = audioEngine.getDuration();
-            statusText += juce::String::formatted(" | %.1f / %.1f s (%.0f%%) | %s | %.1f kHz | %d samples",
-                                                  position * duration,
-                                                  duration,
-                                                  position * 100.0,
-                                                  audioEngine.getCurrentDeviceName().toRawUTF8(),
-                                                  audioEngine.getCurrentSampleRate() / 1000.0,
-                                                  audioEngine.getCurrentBufferSize());
+            statusText += " | " + juce::String(position * 100.0, 1) + "% | " + audioEngine.getCurrentFileName();
         }
 
         statusBar.setText(statusText, juce::dontSendNotification);
 
-        // Update waveform position
+        // Update positions in all components
         if (hasFile)
         {
             double currentPos = audioEngine.getPosition();
+            double currentSeconds = currentPos * audioEngine.getDuration();
+            double durationSecs = audioEngine.getDuration();
+
+            // Update TopInfoBar position and duration
+            topInfoBar.setPosition(currentSeconds);
+            topInfoBar.setDuration(durationSecs);
+
+            // Update waveform display
             waveformDisplay.setPosition(currentPos);
 
+            // Update Track Compare Panel position
+            trackComparePanel.setPosition(currentPos);
+
+            // Update Transport Control Panel
+            transportControlPanel.setPosition(currentSeconds);
+            transportControlPanel.setDuration(durationSecs);
+
+            // Update Audio Timeline position
+            audioTimeline.setPosition(currentPos);
+
             // Update level meter when not playing
-            if (state != AudioEngine::PlayState::Playing)
+            if (!isPlaying)
             {
                 if (std::abs(currentPos - lastLevelUpdatePosition) > 0.001)
                 {
@@ -822,6 +1137,8 @@ private:
             "  S - Stop\n"
             "  Home - Skip to Start\n"
             "  End - Skip to End\n\n"
+            "Processing:\n"
+            "  A - Toggle A/B Compare (Dry/Wet)\n\n"
             "Waveform:\n"
             "  Mouse Wheel - Zoom In/Out\n"
             "  Ctrl+Drag - Pan\n"
@@ -836,31 +1153,36 @@ private:
     }
 
     //==========================================================================
+    JapaneseLookAndFeel japaneseLookAndFeel;
     AudioEngine audioEngine;
 
     // UI Components
     PanelContainer mainPanelContainer { PanelContainer::Orientation::Horizontal };
     PanelContainer leftPanelContainer { PanelContainer::Orientation::Vertical };
     PanelContainer rightPanelContainer { PanelContainer::Orientation::Vertical };
+    PanelContainer metersRowContainer { PanelContainer::Orientation::Horizontal };
 
     DeviceControlPanel deviceControlPanel;
+    TransportControlPanel transportControlPanel;
+    TopInfoBar topInfoBar;
     FileInfoPanel fileInfoPanel;
     RecordingPanel recordingPanel;
     PlaylistPanel playlistPanel;
+    MarkerPanel markerPanel;
     TabbedDisplayArea tabbedDisplay;
     WaveformDisplay waveformDisplay;
-    SpectrumDisplay spectrumDisplay;
-    SpectrogramDisplay spectrogramDisplay;
-    PitchDisplay pitchDisplay;
-    HarmonicsDisplay harmonicsDisplay;
-    MFCCDisplay mfccDisplay;
-    FilterPanel filterPanel;
-    GeneratorPanel generatorPanel;
-    ResponseAnalyzerPanel responseAnalyzerPanel;
-    VectorscopeDisplay vectorscopeDisplay;
-    HistogramDisplay histogramDisplay;
+
+    // Combined panels (organized UI)
+    SpectrumPanel spectrumPanel;       // Spectrum + Spectrogram
+    AnalysisPanel analysisPanel;       // Pitch, BPM, Key, Harmonics, MFCC
+    MetersPanel metersPanel;           // Vectorscope, Histogram
+    ToolsPanel toolsPanel;             // Filter/EQ, Generator, IR/FR
+    PluginHostPanel pluginHostPanel;   // VST3 Plugin Host
+    TrackComparePanel trackComparePanel; // Dual track comparison
+    AudioTimeline audioTimeline;          // Professional audio timeline
+
     MultiViewContainer multiViewContainer;
-    TimecodeDisplay timecodeDisplay;
+    ABCompareControl abCompareControl;
     MasterGainControl masterGainControl;
     LevelMeter levelMeter;
     TruePeakMeter truePeakMeter;

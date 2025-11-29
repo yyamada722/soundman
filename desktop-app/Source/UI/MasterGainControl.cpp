@@ -9,10 +9,12 @@ MasterGainControl::MasterGainControl()
     titleLabel.setColour(juce::Label::textColourId, juce::Colours::white);
 
     addAndMakeVisible(gainSlider);
-    gainSlider.setRange(-60.0, 12.0, 0.1);
+    gainSlider.setRange(-60.0, 12.0, 0.5);  // Larger step for smoother control
     gainSlider.setValue(0.0);
     gainSlider.setSliderStyle(juce::Slider::LinearVertical);
     gainSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+    gainSlider.setVelocityBasedMode(true);
+    gainSlider.setVelocityModeParameters(0.5, 1, 0.1, false);  // Smoother velocity
     gainSlider.setColour(juce::Slider::thumbColourId, juce::Colour(0xff4a90e2));
     gainSlider.setColour(juce::Slider::trackColourId, juce::Colour(0xff2a4a6a));
     gainSlider.setColour(juce::Slider::backgroundColourId, juce::Colour(0xff1a1a1a));

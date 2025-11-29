@@ -4,6 +4,7 @@
     VectorscopeDisplay.h
 
     Vectorscope (Lissajous) display for stereo field visualization
+    Optimized for performance
 
   ==============================================================================
 */
@@ -11,7 +12,6 @@
 #pragma once
 
 #include <juce_gui_basics/juce_gui_basics.h>
-#include <juce_dsp/juce_dsp.h>
 #include <vector>
 
 class VectorscopeDisplay : public juce::Component,
@@ -51,15 +51,17 @@ private:
     void drawVectorscope(juce::Graphics& g, const juce::Rectangle<int>& bounds);
 
     //==========================================================================
-    static constexpr int MAX_POINTS = 2048;
+    static constexpr int MAX_POINTS = 512;  // Reduced from 2048
+    static constexpr int DRAW_STEP = 2;     // Draw every Nth point
     std::vector<SamplePoint> sampleBuffer;
     int writeIndex { 0 };
     bool bufferFull { false };
 
     juce::CriticalSection bufferLock;
 
-    // Decay for trails
-    float trailDecay { 0.95f };
+    // Cached path for faster drawing
+    juce::Path cachedPath;
+    bool pathNeedsUpdate { true };
 
     //==========================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(VectorscopeDisplay)

@@ -15,7 +15,14 @@
       "Bash(start:*)",
       "Bash(find:*)",
       "Bash(python:*)",
-      "Bash(explorer \"D:\\Projects\\Soundman\\test-audio\\output\")"
+      "Bash(explorer \"D:\\Projects\\Soundman\\test-audio\\output\")",
+      "Bash(cat:*)",
+      "Bash(cmd //c \"taskkill /IM Soundman.exe /F\")",
+      "Bash(exit 0)",
+      "Bash(taskkill:*)",
+      "Bash(cmd //c \"taskkill //IM Soundman.exe //F\")",
+      "Bash(powershell -Command:*)",
+      "Bash(cmd /c start \"\" \"D:\\Projects\\Soundman\\desktop-app\\Build\\SoundmanDesktop_artefacts\\Release\\Soundman.exe\")"
     ],
     "deny": [],
     "ask": []

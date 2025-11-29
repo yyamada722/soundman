@@ -3,7 +3,7 @@
 
     HistogramDisplay.h
 
-    Audio amplitude histogram display
+    Audio amplitude histogram display - Optimized
 
   ==============================================================================
 */
@@ -43,14 +43,17 @@ private:
     void drawGrid(juce::Graphics& g, const juce::Rectangle<int>& bounds);
 
     //==========================================================================
-    static constexpr int NUM_BINS = 128;
+    static constexpr int NUM_BINS = 64;  // Reduced from 128
     std::vector<int> histogram;
     int maxBinValue { 1 };
 
     juce::CriticalSection histogramLock;
 
     // Decay for smooth histogram
-    float decay { 0.98f };
+    float decay { 0.95f };
+
+    // Precomputed bar colors
+    std::vector<juce::Colour> barColors;
 
     //==========================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(HistogramDisplay)

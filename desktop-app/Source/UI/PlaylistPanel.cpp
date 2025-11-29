@@ -11,6 +11,36 @@
 #include "PlaylistPanel.h"
 
 //==============================================================================
+// Japanese font helper
+static juce::Font getJapaneseFont(float height, int style = juce::Font::plain)
+{
+    static juce::String cachedFontName;
+
+    if (cachedFontName.isEmpty())
+    {
+        juce::StringArray fontNames = juce::Font::findAllTypefaceNames();
+        const char* japaneseFonts[] = {
+            "Meiryo UI", "Meiryo", "Yu Gothic UI", "Yu Gothic",
+            "MS UI Gothic", "MS Gothic", "MS PGothic", nullptr
+        };
+
+        for (int i = 0; japaneseFonts[i] != nullptr; ++i)
+        {
+            if (fontNames.contains(japaneseFonts[i]))
+            {
+                cachedFontName = japaneseFonts[i];
+                break;
+            }
+        }
+
+        if (cachedFontName.isEmpty())
+            cachedFontName = juce::Font::getDefaultSansSerifFontName();
+    }
+
+    return juce::Font(cachedFontName, height, style);
+}
+
+//==============================================================================
 PlaylistPanel::PlaylistListBox::PlaylistListBox(PlaylistPanel& o)
     : owner(o)
 {
@@ -51,9 +81,9 @@ void PlaylistPanel::PlaylistListBox::paintListBoxItem(int rowNumber, juce::Graph
         g.fillRect(0, 0, 3, height);
     }
 
-    // Text
+    // Text - use Japanese font
     g.setColour(rowIsSelected ? juce::Colours::white : juce::Colours::lightgrey);
-    g.setFont(juce::Font(13.0f));
+    g.setFont(getJapaneseFont(13.0f));
 
     juce::String displayText = item.displayName;
     if (item.duration > 0.0)
@@ -82,10 +112,10 @@ void PlaylistPanel::PlaylistListBox::listBoxItemDoubleClicked(int row, const juc
 PlaylistPanel::PlaylistPanel()
     : playlistListBox(*this)
 {
-    // Title
+    // Title - use Japanese font
     addAndMakeVisible(titleLabel);
     titleLabel.setText("Playlist", juce::dontSendNotification);
-    titleLabel.setFont(juce::Font(16.0f, juce::Font::bold));
+    titleLabel.setFont(getJapaneseFont(16.0f, juce::Font::bold));
     titleLabel.setColour(juce::Label::textColourId, juce::Colours::white);
     titleLabel.setJustificationType(juce::Justification::centred);
 

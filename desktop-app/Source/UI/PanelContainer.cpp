@@ -262,7 +262,14 @@ void PanelContainer::mouseDrag(const juce::MouseEvent& event)
     int currentPosition = orientation == Orientation::Horizontal ? event.x : event.y;
     int delta = currentPosition - dragStartPosition;
 
+    // Apply minimum threshold to reduce sensitivity
+    if (std::abs(delta) < 3)
+        return;
+
     updateDividerPosition(draggingDivider, delta);
+
+    // Update start position for incremental drag
+    dragStartPosition = currentPosition;
 }
 
 void PanelContainer::mouseUp(const juce::MouseEvent& event)
@@ -298,6 +305,13 @@ int PanelContainer::getDividerIndexAt(int x, int y) const
             continue;
 
         auto dividerBounds = getDividerBounds(i);
+
+        // Expand hit area for easier grabbing
+        int expand = (hitAreaWidth - dividerWidth) / 2;
+        if (orientation == Orientation::Horizontal)
+            dividerBounds = dividerBounds.expanded(expand, 0);
+        else
+            dividerBounds = dividerBounds.expanded(0, expand);
 
         if (dividerBounds.contains(x, y))
             return i;
@@ -349,7 +363,7 @@ void PanelContainer::updateDividerPosition(int dividerIndex, int delta)
     if (nextVisibleIndex >= (int)panels.size())
         return;
 
-    // Get current panel sizes
+    // Get current panel bounds
     auto currentBounds = panels[dividerIndex].component->getBounds();
     auto nextBounds = panels[nextVisibleIndex].component->getBounds();
 
@@ -364,25 +378,73 @@ void PanelContainer::updateDividerPosition(int dividerIndex, int delta)
     int newCurrentSize = currentSize + delta;
     int newNextSize = nextSize - delta;
 
-    // Apply constraints
-    newCurrentSize = juce::jmax(newCurrentSize, panels[dividerIndex].minSize);
-    newNextSize = juce::jmax(newNextSize, panels[nextVisibleIndex].minSize);
+    // Apply min constraints
+    if (newCurrentSize < panels[dividerIndex].minSize)
+    {
+        newCurrentSize = panels[dividerIndex].minSize;
+        newNextSize = currentSize + nextSize - newCurrentSize;
+    }
+    if (newNextSize < panels[nextVisibleIndex].minSize)
+    {
+        newNextSize = panels[nextVisibleIndex].minSize;
+        newCurrentSize = currentSize + nextSize - newNextSize;
+    }
 
-    if (panels[dividerIndex].maxSize > 0)
-        newCurrentSize = juce::jmin(newCurrentSize, panels[dividerIndex].maxSize);
-    if (panels[nextVisibleIndex].maxSize > 0)
-        newNextSize = juce::jmin(newNextSize, panels[nextVisibleIndex].maxSize);
+    // Apply max constraints
+    if (panels[dividerIndex].maxSize > 0 && newCurrentSize > panels[dividerIndex].maxSize)
+    {
+        newCurrentSize = panels[dividerIndex].maxSize;
+        newNextSize = currentSize + nextSize - newCurrentSize;
+    }
+    if (panels[nextVisibleIndex].maxSize > 0 && newNextSize > panels[nextVisibleIndex].maxSize)
+    {
+        newNextSize = panels[nextVisibleIndex].maxSize;
+        newCurrentSize = currentSize + nextSize - newNextSize;
+    }
 
-    // Update proportions
-    int totalSize = newCurrentSize + newNextSize;
+    // Skip if no change
+    if (newCurrentSize == currentSize)
+        return;
+
+    // Directly update bounds without using proportions
+    if (orientation == Orientation::Horizontal)
+    {
+        currentBounds.setWidth(newCurrentSize);
+        nextBounds.setX(currentBounds.getRight() + dividerWidth);
+        nextBounds.setWidth(newNextSize);
+    }
+    else
+    {
+        currentBounds.setHeight(newCurrentSize);
+        nextBounds.setY(currentBounds.getBottom() + dividerWidth);
+        nextBounds.setHeight(newNextSize);
+    }
+
+    panels[dividerIndex].component->setBounds(currentBounds);
+    panels[nextVisibleIndex].component->setBounds(nextBounds);
+
+    // Update proportions to match new sizes (for window resize consistency)
+    int totalSize = orientation == Orientation::Horizontal
+                    ? getWidth()
+                    : getHeight();
+    totalSize -= (int)(panels.size() - 1) * dividerWidth;
+
     if (totalSize > 0)
     {
-        panels[dividerIndex].proportion = (double)newCurrentSize / totalSize;
-        panels[nextVisibleIndex].proportion = (double)newNextSize / totalSize;
-
-        normalizeProportion();
-        resized();
+        for (auto& panel : panels)
+        {
+            if (panel.isVisible)
+            {
+                auto bounds = panel.component->getBounds();
+                int size = orientation == Orientation::Horizontal
+                           ? bounds.getWidth()
+                           : bounds.getHeight();
+                panel.proportion = (double)size / totalSize;
+            }
+        }
     }
+
+    repaint();
 }
 
 void PanelContainer::normalizeProportion()
