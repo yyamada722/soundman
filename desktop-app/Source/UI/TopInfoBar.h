@@ -19,6 +19,15 @@ class TopInfoBar : public juce::Component,
                    public juce::Timer
 {
 public:
+    //==========================================================================
+    // Playback Mode
+    enum class PlaybackMode
+    {
+        SingleFile,    // Single audio file playback
+        MultiTrack,    // Multi-track project playback
+        ABCompare      // A/B comparison playback
+    };
+
     TopInfoBar();
     ~TopInfoBar() override;
 
@@ -59,6 +68,11 @@ public:
     void setBufferSize(int size);
 
     //==========================================================================
+    // Playback mode
+    void setPlaybackMode(PlaybackMode mode);
+    PlaybackMode getPlaybackMode() const { return playbackMode; }
+
+    //==========================================================================
     // Callbacks
     std::function<void()> onPlay;
     std::function<void()> onPause;
@@ -70,11 +84,14 @@ public:
     std::function<void(double)> onSeek;  // Seek to position in seconds
     std::function<void()> onOpenFile;
     std::function<void()> onSettings;
+    std::function<void(PlaybackMode)> onPlaybackModeChanged;
 
 private:
     //==========================================================================
     void createTransportButtons();
+    void createModeButtons();
     void updatePlayButtonIcon();
+    void updateModeButtonStates();
     juce::String formatTimecode(double seconds) const;
     juce::String formatTimecodeCompact(double seconds) const;
     juce::Font getJapaneseFont(float height, int style = juce::Font::plain) const;
@@ -98,6 +115,7 @@ private:
     bool playing { false };
     bool recording { false };
     bool loopEnabled { false };
+    PlaybackMode playbackMode { PlaybackMode::SingleFile };
 
     // Position
     double position { 0.0 };
@@ -128,6 +146,11 @@ private:
     // Utility buttons
     juce::TextButton openFileButton { "Open" };
     juce::TextButton settingsButton { "Settings" };
+
+    // Mode selector buttons
+    juce::TextButton singleFileModeButton { "File" };
+    juce::TextButton multiTrackModeButton { "Multi" };
+    juce::TextButton abCompareModeButton { "A/B" };
 
     // Stored drawable for play/pause toggle
     std::unique_ptr<juce::Drawable> playIcon;

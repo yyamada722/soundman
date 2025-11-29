@@ -52,6 +52,13 @@ public:
     // Tab control
     void setTabVisible(int index, bool visible);
     int getTabCount() const { return (int)tabs.size(); }
+    int getNumTabs() const { return (int)tabs.size(); }
+    juce::String getTabName(int index) const
+    {
+        if (index >= 0 && index < (int)tabs.size())
+            return tabs[index].name;
+        return {};
+    }
 
     //==========================================================================
     // Callbacks

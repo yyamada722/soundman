@@ -199,10 +199,33 @@ void AudioEngine::setTrackMixBalance(float balance)
 }
 
 //==============================================================================
+void AudioEngine::setMultiTrackSource(juce::PositionableAudioSource* source)
+{
+    // Prepare the source if we have a valid sample rate
+    if (source != nullptr && preparedSampleRate > 0)
+    {
+        source->prepareToPlay(preparedBlockSize, preparedSampleRate);
+    }
+    multiTrackSource = source;
+}
+
+void AudioEngine::clearMultiTrackSource()
+{
+    if (multiTrackSource != nullptr)
+    {
+        multiTrackSource->releaseResources();
+        multiTrackSource = nullptr;
+    }
+}
+
+//==============================================================================
 void AudioEngine::play()
 {
-    // Need at least one track loaded to play
-    if (!hasFileLoaded() && !hasTrackBLoaded())
+    // Check if we have any source to play
+    bool hasMultiTrack = (multiTrackSource != nullptr);
+    bool hasAnySingleFile = hasFileLoaded() || hasTrackBLoaded();
+
+    if (!hasMultiTrack && !hasAnySingleFile)
         return;
 
     auto currentState = playState.load();
@@ -210,28 +233,41 @@ void AudioEngine::play()
 
     if (currentState == PlayState::Stopped)
     {
-        // Reset positions
-        if (hasFileLoaded() && (track == ActiveTrack::A || track == ActiveTrack::Both))
+        // Multi-track source playback
+        if (hasMultiTrack)
         {
-            transportSource.setPosition(0.0);
-            transportSource.start();
+            multiTrackSource->setNextReadPosition(0);
         }
 
-        if (hasTrackBLoaded() && (track == ActiveTrack::B || track == ActiveTrack::Both))
+        // Single file playback
+        if (!hasMultiTrack && hasAnySingleFile)
         {
-            transportSourceB.setPosition(0.0);
-            transportSourceB.start();
+            if (hasFileLoaded() && (track == ActiveTrack::A || track == ActiveTrack::Both))
+            {
+                transportSource.setPosition(0.0);
+                transportSource.start();
+            }
+
+            if (hasTrackBLoaded() && (track == ActiveTrack::B || track == ActiveTrack::Both))
+            {
+                transportSourceB.setPosition(0.0);
+                transportSourceB.start();
+            }
         }
 
         playState = PlayState::Playing;
     }
     else if (currentState == PlayState::Paused)
     {
-        if (hasFileLoaded() && (track == ActiveTrack::A || track == ActiveTrack::Both))
-            transportSource.start();
+        // Resume playback
+        if (!hasMultiTrack && hasAnySingleFile)
+        {
+            if (hasFileLoaded() && (track == ActiveTrack::A || track == ActiveTrack::Both))
+                transportSource.start();
 
-        if (hasTrackBLoaded() && (track == ActiveTrack::B || track == ActiveTrack::Both))
-            transportSourceB.start();
+            if (hasTrackBLoaded() && (track == ActiveTrack::B || track == ActiveTrack::Both))
+                transportSourceB.start();
+        }
 
         playState = PlayState::Playing;
     }
@@ -448,68 +484,77 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
     // Clear output buffers first
     buffer.clear();
 
-    // Get current track mode
-    auto track = activeTrack.load();
-
     // Create channel info for getting audio
     juce::AudioSourceChannelInfo channelInfo;
     channelInfo.buffer = &buffer;
     channelInfo.startSample = 0;
     channelInfo.numSamples = numSamples;
 
-    // Handle dual track playback based on active track setting
-    if (track == ActiveTrack::A && hasFileLoaded())
+    // Check if we're using multi-track source
+    if (multiTrackSource != nullptr && playState.load() == PlayState::Playing)
     {
-        // Track A only
-        transportSource.getNextAudioBlock(channelInfo);
+        // Get audio from multi-track source
+        multiTrackSource->getNextAudioBlock(channelInfo);
     }
-    else if (track == ActiveTrack::B && hasTrackBLoaded())
+    else
     {
-        // Track B only
-        transportSourceB.getNextAudioBlock(channelInfo);
-    }
-    else if (track == ActiveTrack::Both)
-    {
-        // Mix both tracks
-        float balance = trackMixBalance.load();
-        float gainA = 1.0f - balance;  // 0.0 -> 1.0, 1.0 -> 0.0
-        float gainB = balance;          // 0.0 -> 0.0, 1.0 -> 1.0
+        // Single file playback - handle dual track mode
+        auto track = activeTrack.load();
 
-        // Get Track A audio
-        if (hasFileLoaded())
+        // Handle dual track playback based on active track setting
+        if (track == ActiveTrack::A && hasFileLoaded())
         {
+            // Track A only
             transportSource.getNextAudioBlock(channelInfo);
-            buffer.applyGain(gainA);
         }
-
-        // Get Track B audio and mix
-        if (hasTrackBLoaded())
+        else if (track == ActiveTrack::B && hasTrackBLoaded())
         {
-            juce::AudioBuffer<float> bufferB(numOutputChannels, numSamples);
-            bufferB.clear();
+            // Track B only
+            transportSourceB.getNextAudioBlock(channelInfo);
+        }
+        else if (track == ActiveTrack::Both)
+        {
+            // Mix both tracks
+            float balance = trackMixBalance.load();
+            float gainA = 1.0f - balance;  // 0.0 -> 1.0, 1.0 -> 0.0
+            float gainB = balance;          // 0.0 -> 0.0, 1.0 -> 1.0
 
-            juce::AudioSourceChannelInfo channelInfoB;
-            channelInfoB.buffer = &bufferB;
-            channelInfoB.startSample = 0;
-            channelInfoB.numSamples = numSamples;
-
-            transportSourceB.getNextAudioBlock(channelInfoB);
-
-            // Add Track B to output with gain
-            for (int ch = 0; ch < numOutputChannels; ++ch)
+            // Get Track A audio
+            if (hasFileLoaded())
             {
-                if (ch < bufferB.getNumChannels())
+                transportSource.getNextAudioBlock(channelInfo);
+                buffer.applyGain(gainA);
+            }
+
+            // Get Track B audio and mix
+            if (hasTrackBLoaded())
+            {
+                juce::AudioBuffer<float> bufferB(numOutputChannels, numSamples);
+                bufferB.clear();
+
+                juce::AudioSourceChannelInfo channelInfoB;
+                channelInfoB.buffer = &bufferB;
+                channelInfoB.startSample = 0;
+                channelInfoB.numSamples = numSamples;
+
+                transportSourceB.getNextAudioBlock(channelInfoB);
+
+                // Add Track B to output with gain
+                for (int ch = 0; ch < numOutputChannels; ++ch)
                 {
-                    buffer.addFrom(ch, 0, bufferB, ch, 0, numSamples, gainB);
+                    if (ch < bufferB.getNumChannels())
+                    {
+                        buffer.addFrom(ch, 0, bufferB, ch, 0, numSamples, gainB);
+                    }
                 }
             }
         }
-    }
-    else if (hasFileLoaded())
-    {
-        // Default: play Track A if available
-        transportSource.getNextAudioBlock(channelInfo);
-    }
+        else if (hasFileLoaded())
+        {
+            // Default: play Track A if available
+            transportSource.getNextAudioBlock(channelInfo);
+        }
+    }  // End of else block for single file playback
 
     // Check for loop point
     if (loopEnabled.load() && playState.load() == PlayState::Playing)

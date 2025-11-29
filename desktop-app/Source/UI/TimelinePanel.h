@@ -257,6 +257,83 @@ public:
 };
 
 //==============================================================================
+// Horizontal Fader Strip - Compact horizontal mixer strip for bottom section
+//==============================================================================
+
+class HorizontalFaderStrip : public juce::Component,
+                              public juce::Timer
+{
+public:
+    HorizontalFaderStrip(ProjectManager& pm, const juce::ValueTree& trackState);
+    ~HorizontalFaderStrip() override;
+
+    void paint(juce::Graphics& g) override;
+    void resized() override;
+    void timerCallback() override;
+
+    void updateFromState();
+    juce::String getTrackId() const;
+
+    // Set meter levels
+    void setMeterLevels(float left, float right);
+
+private:
+    ProjectManager& projectManager;
+    juce::ValueTree state;
+
+    // UI Components
+    juce::Label nameLabel;
+    juce::Slider faderSlider;          // Horizontal fader
+    juce::Slider panSlider;            // Small pan knob
+    juce::TextButton muteButton { "M" };
+    juce::TextButton soloButton { "S" };
+
+    // Meter
+    float levelL { 0.0f };
+    float levelR { 0.0f };
+    float peakL { 0.0f };
+    float peakR { 0.0f };
+
+    juce::Colour trackColor;
+
+    void setupComponents();
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(HorizontalFaderStrip)
+};
+
+//==============================================================================
+// Mixer Section Component - Contains all horizontal fader strips
+//==============================================================================
+
+class MixerSectionComponent : public juce::Component
+{
+public:
+    MixerSectionComponent(ProjectManager& pm);
+    ~MixerSectionComponent() override = default;
+
+    void paint(juce::Graphics& g) override;
+    void resized() override;
+
+    void rebuildStrips();
+    void updateFromProject();
+
+    // Scroll sync with timeline headers
+    void setScrollOffset(int offset);
+
+private:
+    ProjectManager& projectManager;
+
+    juce::OwnedArray<HorizontalFaderStrip> strips;
+    int scrollOffset { 0 };
+
+    static constexpr int stripHeight = 50;
+
+    void layoutStrips();
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MixerSectionComponent)
+};
+
+//==============================================================================
 // Timeline Panel - Main container for multi-track timeline
 //==============================================================================
 
@@ -318,6 +395,10 @@ public:
     void setTrackHeight(int height);
     int getTrackHeight() const { return trackHeight; }
 
+    // Mixer section visibility
+    void setMixerVisible(bool visible);
+    bool isMixerVisible() const { return mixerVisible; }
+
     // Callbacks
     std::function<void(juce::int64)> onPlayheadMoved;
     std::function<void(ClipComponent*)> onClipSelected;
@@ -338,9 +419,15 @@ private:
     juce::OwnedArray<TrackHeaderComponent> trackHeaders;
     juce::OwnedArray<TrackLaneComponent> trackLanes;
 
+    // Mixer section (bottom faders)
+    std::unique_ptr<MixerSectionComponent> mixerSection;
+    juce::TextButton toggleMixerButton { "Mix" };
+    bool mixerVisible { true };
+
     // Layout
     static constexpr int rulerHeight = 30;
     static constexpr int headerWidth = 150;
+    static constexpr int mixerHeight = 120;
     int trackHeight { 80 };
 
     // Zoom and scroll

@@ -137,6 +137,12 @@ public:
     void setMasterGain(float gainLinear) { masterGain.store(gainLinear); }
     float getMasterGain() const { return masterGain.load(); }
 
+    //==========================================================================
+    // External source support (for multi-track playback)
+    void setMultiTrackSource(juce::PositionableAudioSource* source);
+    void clearMultiTrackSource();
+    bool isUsingMultiTrackSource() const { return multiTrackSource != nullptr; }
+
     // Dry/Wet mix control for A/B comparison
     void setDryWetMix(float wetAmount) { dryWetMix.store(juce::jlimit(0.0f, 1.0f, wetAmount)); }
     float getDryWetMix() const { return dryWetMix.load(); }
@@ -212,6 +218,9 @@ private:
     // Track selection and mixing
     std::atomic<ActiveTrack> activeTrack { ActiveTrack::A };
     std::atomic<float> trackMixBalance { 0.5f };  // 0.0 = A only, 1.0 = B only
+
+    // External multi-track source (not owned)
+    juce::PositionableAudioSource* multiTrackSource { nullptr };
 
     std::atomic<PlayState> playState { PlayState::Stopped };
 

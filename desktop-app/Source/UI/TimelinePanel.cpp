@@ -444,6 +444,271 @@ void TrackLaneComponent::handleClipMoved(ClipComponent* clip, juce::int64 newSta
 }
 
 //==============================================================================
+// HorizontalFaderStrip Implementation
+//==============================================================================
+
+HorizontalFaderStrip::HorizontalFaderStrip(ProjectManager& pm, const juce::ValueTree& trackState)
+    : projectManager(pm)
+    , state(trackState)
+{
+    setupComponents();
+    updateFromState();
+    startTimerHz(30);
+}
+
+HorizontalFaderStrip::~HorizontalFaderStrip()
+{
+    stopTimer();
+}
+
+void HorizontalFaderStrip::setupComponents()
+{
+    // Track name label
+    nameLabel.setJustificationType(juce::Justification::centredLeft);
+    nameLabel.setFont(juce::Font(11.0f));
+    nameLabel.setColour(juce::Label::textColourId, juce::Colours::white);
+    addAndMakeVisible(nameLabel);
+
+    // Mute button
+    muteButton.setClickingTogglesState(true);
+    muteButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff3a3a3a));
+    muteButton.setColour(juce::TextButton::buttonOnColourId, juce::Colours::orange);
+    muteButton.onClick = [this]() {
+        projectManager.setTrackMute(state, muteButton.getToggleState());
+    };
+    addAndMakeVisible(muteButton);
+
+    // Solo button
+    soloButton.setClickingTogglesState(true);
+    soloButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff3a3a3a));
+    soloButton.setColour(juce::TextButton::buttonOnColourId, juce::Colours::yellow);
+    soloButton.onClick = [this]() {
+        projectManager.setTrackSolo(state, soloButton.getToggleState());
+    };
+    addAndMakeVisible(soloButton);
+
+    // Pan slider (small rotary)
+    panSlider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+    panSlider.setTextBoxStyle(juce::Slider::NoTextBox, true, 0, 0);
+    panSlider.setRange(-1.0, 1.0, 0.01);
+    panSlider.setValue(0.0);
+    panSlider.setColour(juce::Slider::rotarySliderFillColourId, juce::Colour(0xff00aaff));
+    panSlider.onValueChange = [this]() {
+        projectManager.setTrackPan(state, static_cast<float>(panSlider.getValue()));
+    };
+    addAndMakeVisible(panSlider);
+
+    // Volume fader (horizontal)
+    faderSlider.setSliderStyle(juce::Slider::LinearHorizontal);
+    faderSlider.setTextBoxStyle(juce::Slider::NoTextBox, true, 0, 0);
+    faderSlider.setRange(-60.0, 6.0, 0.1);
+    faderSlider.setValue(0.0);
+    faderSlider.setSkewFactorFromMidPoint(-6.0);
+    faderSlider.setColour(juce::Slider::trackColourId, juce::Colour(0xff3a3a3a));
+    faderSlider.setColour(juce::Slider::thumbColourId, juce::Colours::white);
+    faderSlider.onValueChange = [this]() {
+        float gainDb = static_cast<float>(faderSlider.getValue());
+        float gainLinear = juce::Decibels::decibelsToGain(gainDb);
+        projectManager.setTrackVolume(state, gainLinear);
+    };
+    addAndMakeVisible(faderSlider);
+}
+
+void HorizontalFaderStrip::paint(juce::Graphics& g)
+{
+    auto bounds = getLocalBounds();
+
+    // Background
+    g.setColour(juce::Colour(0xff252525));
+    g.fillRect(bounds);
+
+    // Left color strip
+    g.setColour(trackColor);
+    g.fillRect(0, 0, 4, bounds.getHeight());
+
+    // Mini horizontal meter (below fader)
+    auto meterBounds = bounds.removeFromBottom(8).reduced(80, 1);
+    meterBounds.removeFromLeft(4);
+
+    // Meter background
+    g.setColour(juce::Colour(0xff1a1a1a));
+    g.fillRect(meterBounds);
+
+    // Left channel meter
+    float leftLevel = juce::jlimit(0.0f, 1.0f, levelL);
+    int leftWidth = static_cast<int>(leftLevel * meterBounds.getWidth() / 2);
+    auto leftMeterBounds = meterBounds.removeFromLeft(meterBounds.getWidth() / 2);
+    if (leftWidth > 0)
+    {
+        juce::Colour meterColor = leftLevel > 0.9f ? juce::Colours::red :
+                                  leftLevel > 0.7f ? juce::Colours::yellow :
+                                  juce::Colours::green;
+        g.setColour(meterColor);
+        g.fillRect(leftMeterBounds.getX(), leftMeterBounds.getY(), leftWidth, leftMeterBounds.getHeight());
+    }
+
+    // Right channel meter
+    float rightLevel = juce::jlimit(0.0f, 1.0f, levelR);
+    int rightWidth = static_cast<int>(rightLevel * meterBounds.getWidth());
+    if (rightWidth > 0)
+    {
+        juce::Colour meterColor = rightLevel > 0.9f ? juce::Colours::red :
+                                  rightLevel > 0.7f ? juce::Colours::yellow :
+                                  juce::Colours::green;
+        g.setColour(meterColor);
+        g.fillRect(meterBounds.getX(), meterBounds.getY(), rightWidth, meterBounds.getHeight());
+    }
+
+    // Bottom border
+    g.setColour(juce::Colour(0xff3a3a3a));
+    g.drawLine(0, static_cast<float>(getHeight() - 1),
+               static_cast<float>(getWidth()), static_cast<float>(getHeight() - 1));
+}
+
+void HorizontalFaderStrip::resized()
+{
+    auto bounds = getLocalBounds().reduced(2);
+    bounds.removeFromLeft(6);  // Space for color strip
+
+    // Top row: name, M, S, Pan
+    auto topRow = bounds.removeFromTop(22);
+
+    nameLabel.setBounds(topRow.removeFromLeft(70));
+    topRow.removeFromLeft(4);
+
+    muteButton.setBounds(topRow.removeFromLeft(20));
+    topRow.removeFromLeft(2);
+    soloButton.setBounds(topRow.removeFromLeft(20));
+    topRow.removeFromLeft(4);
+
+    panSlider.setBounds(topRow.removeFromLeft(24).reduced(0, 2));
+
+    // Bottom row: fader (leaving space for meter)
+    bounds.removeFromBottom(10);  // Space for meter
+    faderSlider.setBounds(bounds.reduced(0, 2));
+}
+
+void HorizontalFaderStrip::timerCallback()
+{
+    // Decay peaks
+    peakL *= 0.95f;
+    peakR *= 0.95f;
+
+    if (levelL < peakL) levelL = peakL;
+    if (levelR < peakR) levelR = peakR;
+
+    repaint();
+}
+
+void HorizontalFaderStrip::updateFromState()
+{
+    TrackModel track(state);
+
+    nameLabel.setText(track.getName(), juce::dontSendNotification);
+    trackColor = track.getColor();
+    muteButton.setToggleState(track.isMuted(), juce::dontSendNotification);
+    soloButton.setToggleState(track.isSoloed(), juce::dontSendNotification);
+
+    float volume = track.getVolume();
+    float volumeDb = juce::Decibels::gainToDecibels(volume, -60.0f);
+    faderSlider.setValue(volumeDb, juce::dontSendNotification);
+
+    panSlider.setValue(track.getPan(), juce::dontSendNotification);
+
+    repaint();
+}
+
+juce::String HorizontalFaderStrip::getTrackId() const
+{
+    return state[IDs::trackId].toString();
+}
+
+void HorizontalFaderStrip::setMeterLevels(float left, float right)
+{
+    levelL = left;
+    levelR = right;
+    peakL = juce::jmax(peakL, left);
+    peakR = juce::jmax(peakR, right);
+}
+
+//==============================================================================
+// MixerSectionComponent Implementation
+//==============================================================================
+
+MixerSectionComponent::MixerSectionComponent(ProjectManager& pm)
+    : projectManager(pm)
+{
+    rebuildStrips();
+}
+
+void MixerSectionComponent::paint(juce::Graphics& g)
+{
+    // Dark background
+    g.fillAll(juce::Colour(0xff1e1e1e));
+
+    // Top border/separator
+    g.setColour(juce::Colour(0xff444444));
+    g.drawLine(0, 0, static_cast<float>(getWidth()), 0, 2.0f);
+
+    // "MIXER" label on left
+    g.setColour(juce::Colour(0xff666666));
+    g.setFont(10.0f);
+    g.drawText("MIX", 4, 4, 40, 14, juce::Justification::centredLeft, false);
+}
+
+void MixerSectionComponent::resized()
+{
+    layoutStrips();
+}
+
+void MixerSectionComponent::rebuildStrips()
+{
+    strips.clear();
+
+    auto& project = projectManager.getProject();
+    auto tracks = project.getTracksSortedByOrder();
+
+    for (auto& trackState : tracks)
+    {
+        auto* strip = new HorizontalFaderStrip(projectManager, trackState);
+        strips.add(strip);
+        addAndMakeVisible(strip);
+    }
+
+    layoutStrips();
+}
+
+void MixerSectionComponent::updateFromProject()
+{
+    for (auto* strip : strips)
+    {
+        strip->updateFromState();
+    }
+}
+
+void MixerSectionComponent::setScrollOffset(int offset)
+{
+    if (scrollOffset != offset)
+    {
+        scrollOffset = offset;
+        layoutStrips();
+    }
+}
+
+void MixerSectionComponent::layoutStrips()
+{
+    int y = 20;  // Leave space for header
+    int currentStripHeight = (getHeight() - 20) / juce::jmax(1, strips.size());
+    currentStripHeight = juce::jlimit(40, 60, currentStripHeight);
+
+    for (auto* strip : strips)
+    {
+        strip->setBounds(0, y, getWidth(), currentStripHeight);
+        y += currentStripHeight;
+    }
+}
+
+//==============================================================================
 // TimelineRuler Implementation
 //==============================================================================
 
@@ -608,6 +873,20 @@ TimelinePanel::TimelinePanel(ProjectManager& pm, juce::AudioFormatManager& fm)
     };
     addAndMakeVisible(trackViewport);
 
+    // Setup mixer section (bottom faders)
+    mixerSection = std::make_unique<MixerSectionComponent>(projectManager);
+    addAndMakeVisible(*mixerSection);
+
+    // Toggle mixer button
+    toggleMixerButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff3a3a3a));
+    toggleMixerButton.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff0066cc));
+    toggleMixerButton.setClickingTogglesState(true);
+    toggleMixerButton.setToggleState(true, juce::dontSendNotification);
+    toggleMixerButton.onClick = [this]() {
+        setMixerVisible(toggleMixerButton.getToggleState());
+    };
+    addAndMakeVisible(toggleMixerButton);
+
     // Initial setup from project
     rebuildTracks();
 
@@ -629,20 +908,41 @@ void TimelinePanel::resized()
 {
     auto bounds = getLocalBounds();
 
+    // Toggle mixer button in top-left corner
+    toggleMixerButton.setBounds(2, 2, 40, 26);
+
+    // Mixer section at bottom (if visible)
+    int currentMixerHeight = mixerVisible ? mixerHeight : 0;
+    if (mixerSection != nullptr)
+    {
+        if (mixerVisible)
+        {
+            mixerSection->setBounds(0, bounds.getHeight() - mixerHeight, bounds.getWidth(), mixerHeight);
+            mixerSection->setVisible(true);
+        }
+        else
+        {
+            mixerSection->setVisible(false);
+        }
+    }
+
+    // Remaining area for timeline
+    auto timelineArea = bounds.withTrimmedBottom(currentMixerHeight);
+
     // Ruler at top
-    ruler.setBounds(headerWidth, 0, bounds.getWidth() - headerWidth, rulerHeight);
+    ruler.setBounds(headerWidth, 0, timelineArea.getWidth() - headerWidth, rulerHeight);
 
     // Header area on left
-    auto headerArea = bounds.removeFromLeft(headerWidth);
+    auto headerArea = timelineArea.removeFromLeft(headerWidth);
     headerArea.removeFromTop(rulerHeight);
     headerViewport.setBounds(headerArea);
 
     // Track area fills the rest
-    bounds.removeFromTop(rulerHeight);
-    trackViewport.setBounds(bounds);
+    timelineArea.removeFromTop(rulerHeight);
+    trackViewport.setBounds(timelineArea);
 
-    // Playhead spans full height
-    playhead.setBounds(headerWidth, 0, 10, getHeight());
+    // Playhead spans timeline height (not mixer)
+    playhead.setBounds(headerWidth, 0, 10, bounds.getHeight() - currentMixerHeight);
 
     layoutTracks();
 }
@@ -839,6 +1139,16 @@ void TimelinePanel::setTrackHeight(int height)
     layoutTracks();
 }
 
+void TimelinePanel::setMixerVisible(bool visible)
+{
+    if (mixerVisible != visible)
+    {
+        mixerVisible = visible;
+        toggleMixerButton.setToggleState(visible, juce::dontSendNotification);
+        resized();
+    }
+}
+
 //==============================================================================
 // Private Methods
 //==============================================================================
@@ -873,6 +1183,10 @@ void TimelinePanel::rebuildTracks()
         trackLanes.add(lane);
         trackContainer.addAndMakeVisible(lane);
     }
+
+    // Rebuild mixer section
+    if (mixerSection != nullptr)
+        mixerSection->rebuildStrips();
 
     layoutTracks();
 }

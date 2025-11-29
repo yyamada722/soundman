@@ -837,6 +837,12 @@ private:
         // Refresh timeline display
         if (multiTrackTimeline != nullptr)
             multiTrackTimeline->projectChanged();
+
+        // Rebuild multi-track source with new clip
+        if (multiTrackSource != nullptr)
+            multiTrackSource->rebuildFromProject();
+
+        statusBar.setText("Added clip to " + trackModel.getName(), juce::dontSendNotification);
     }
 
     void showAddToTrackDialog(const juce::File& file)
@@ -892,17 +898,16 @@ private:
         topInfoBar.setSampleRate(audioEngine.getCurrentSampleRate());
         topInfoBar.setBufferSize(audioEngine.getCurrentBufferSize());
 
-        // Transport callbacks
-        topInfoBar.onPlay = [this]() { audioEngine.play(); };
-        topInfoBar.onPause = [this]() { audioEngine.pause(); };
-        topInfoBar.onStop = [this]() { audioEngine.stop(); };
-        topInfoBar.onSkipToStart = [this]() { audioEngine.setPosition(0.0); };
-        topInfoBar.onSkipToEnd = [this]() { audioEngine.setPosition(1.0); };
+        // Transport callbacks - route based on current playback mode
+        topInfoBar.onPlay = [this]() { handlePlay(); };
+        topInfoBar.onPause = [this]() { handlePause(); };
+        topInfoBar.onStop = [this]() { handleStop(); };
+        topInfoBar.onSkipToStart = [this]() { handleSkipToStart(); };
+        topInfoBar.onSkipToEnd = [this]() { handleSkipToEnd(); };
 
         topInfoBar.onSeek = [this](double seconds)
         {
-            double position = seconds / audioEngine.getDuration();
-            audioEngine.setPosition(juce::jlimit(0.0, 1.0, position));
+            handleSeek(seconds);
         };
 
         topInfoBar.onToggleLoop = [this]()
@@ -927,6 +932,224 @@ private:
         // Utility button callbacks
         topInfoBar.onOpenFile = [this]() { loadAudioFile(); };
         topInfoBar.onSettings = [this]() { showSettings(); };
+
+        // Playback mode changed callback
+        topInfoBar.onPlaybackModeChanged = [this](TopInfoBar::PlaybackMode mode)
+        {
+            handlePlaybackModeChanged(mode);
+        };
+    }
+
+    void handlePlaybackModeChanged(TopInfoBar::PlaybackMode mode)
+    {
+        // Stop all playback sources before mode change
+        handleStop();
+
+        // Clear multi-track source when not in multi-track mode
+        if (mode != TopInfoBar::PlaybackMode::MultiTrack)
+        {
+            audioEngine.clearMultiTrackSource();
+        }
+
+        switch (mode)
+        {
+            case TopInfoBar::PlaybackMode::SingleFile:
+                statusBar.setText("Mode: Single File - Playing loaded audio", juce::dontSendNotification);
+                tabbedDisplay.setCurrentTab(0);  // Waveform
+                break;
+
+            case TopInfoBar::PlaybackMode::MultiTrack:
+                statusBar.setText("Mode: Multi-Track - Playing project", juce::dontSendNotification);
+                for (int i = 0; i < tabbedDisplay.getNumTabs(); ++i)
+                {
+                    if (tabbedDisplay.getTabName(i) == "Multi-Track")
+                    {
+                        tabbedDisplay.setCurrentTab(i);
+                        break;
+                    }
+                }
+                break;
+
+            case TopInfoBar::PlaybackMode::ABCompare:
+                statusBar.setText("Mode: A/B Compare - Comparing tracks", juce::dontSendNotification);
+                for (int i = 0; i < tabbedDisplay.getNumTabs(); ++i)
+                {
+                    if (tabbedDisplay.getTabName(i) == "Compare")
+                    {
+                        tabbedDisplay.setCurrentTab(i);
+                        break;
+                    }
+                }
+                break;
+        }
+
+        currentPlaybackMode = mode;
+        topInfoBar.setPlaying(false);
+    }
+
+    //==========================================================================
+    // Mode-aware transport handlers
+    //==========================================================================
+    void handlePlay()
+    {
+        switch (currentPlaybackMode)
+        {
+            case TopInfoBar::PlaybackMode::SingleFile:
+                // Clear multi-track source to ensure single file playback
+                audioEngine.clearMultiTrackSource();
+                audioEngine.play();
+                topInfoBar.setPlaying(true);
+                break;
+
+            case TopInfoBar::PlaybackMode::MultiTrack:
+                if (multiTrackSource != nullptr)
+                {
+                    // Ensure project is loaded and source is rebuilt
+                    multiTrackSource->loadProject(projectManager.getProjectState());
+                    multiTrackSource->rebuildFromProject();
+
+                    // Connect multi-track source to audio output
+                    audioEngine.setMultiTrackSource(multiTrackSource.get());
+                    audioEngine.play();
+                    topInfoBar.setPlaying(true);
+
+                    // Show track/clip count in status
+                    auto& project = projectManager.getProject();
+                    int numTracks = project.getNumTracks();
+                    int numClips = 0;
+                    for (int i = 0; i < numTracks; ++i)
+                    {
+                        TrackModel track(project.getTrack(i));
+                        numClips += track.getClipsSortedByTime().size();
+                    }
+                    statusBar.setText("Playing: " + juce::String(numTracks) + " tracks, " +
+                                     juce::String(numClips) + " clips", juce::dontSendNotification);
+                }
+                else
+                {
+                    statusBar.setText("No multi-track project loaded", juce::dontSendNotification);
+                }
+                break;
+
+            case TopInfoBar::PlaybackMode::ABCompare:
+                // TODO: Start A/B comparison playback
+                statusBar.setText("A/B Compare playback - not yet implemented", juce::dontSendNotification);
+                break;
+        }
+    }
+
+    void handlePause()
+    {
+        switch (currentPlaybackMode)
+        {
+            case TopInfoBar::PlaybackMode::SingleFile:
+                audioEngine.pause();
+                topInfoBar.setPlaying(false);
+                break;
+
+            case TopInfoBar::PlaybackMode::MultiTrack:
+                audioEngine.pause();
+                topInfoBar.setPlaying(false);
+                break;
+
+            case TopInfoBar::PlaybackMode::ABCompare:
+                audioEngine.pause();
+                topInfoBar.setPlaying(false);
+                break;
+        }
+    }
+
+    void handleStop()
+    {
+        // Stop audio engine (handles all sources)
+        audioEngine.stop();
+        topInfoBar.setPlaying(false);
+
+        // Reset position based on mode
+        switch (currentPlaybackMode)
+        {
+            case TopInfoBar::PlaybackMode::SingleFile:
+                audioEngine.setPosition(0.0);
+                break;
+
+            case TopInfoBar::PlaybackMode::MultiTrack:
+                if (multiTrackSource != nullptr)
+                    multiTrackSource->setNextReadPosition(0);
+                break;
+
+            case TopInfoBar::PlaybackMode::ABCompare:
+                break;
+        }
+    }
+
+    void handleSkipToStart()
+    {
+        switch (currentPlaybackMode)
+        {
+            case TopInfoBar::PlaybackMode::SingleFile:
+                audioEngine.setPosition(0.0);
+                break;
+
+            case TopInfoBar::PlaybackMode::MultiTrack:
+                if (multiTrackSource != nullptr)
+                    multiTrackSource->setNextReadPosition(0);
+                break;
+
+            case TopInfoBar::PlaybackMode::ABCompare:
+                audioEngine.setPosition(0.0);
+                break;
+        }
+    }
+
+    void handleSkipToEnd()
+    {
+        switch (currentPlaybackMode)
+        {
+            case TopInfoBar::PlaybackMode::SingleFile:
+                audioEngine.setPosition(1.0);
+                break;
+
+            case TopInfoBar::PlaybackMode::MultiTrack:
+                if (multiTrackSource != nullptr)
+                {
+                    auto& project = projectManager.getProject();
+                    multiTrackSource->setNextReadPosition(project.getProjectLength());
+                }
+                break;
+
+            case TopInfoBar::PlaybackMode::ABCompare:
+                audioEngine.setPosition(1.0);
+                break;
+        }
+    }
+
+    void handleSeek(double seconds)
+    {
+        switch (currentPlaybackMode)
+        {
+            case TopInfoBar::PlaybackMode::SingleFile:
+            {
+                double position = seconds / audioEngine.getDuration();
+                audioEngine.setPosition(juce::jlimit(0.0, 1.0, position));
+                break;
+            }
+
+            case TopInfoBar::PlaybackMode::MultiTrack:
+                if (multiTrackSource != nullptr)
+                {
+                    auto& project = projectManager.getProject();
+                    juce::int64 samplePos = static_cast<juce::int64>(seconds * project.getSampleRate());
+                    multiTrackSource->setNextReadPosition(samplePos);
+                }
+                break;
+
+            case TopInfoBar::PlaybackMode::ABCompare:
+            {
+                double position = seconds / audioEngine.getDuration();
+                audioEngine.setPosition(juce::jlimit(0.0, 1.0, position));
+                break;
+            }
+        }
     }
 
     //==========================================================================
@@ -1358,6 +1581,9 @@ private:
 
     std::unique_ptr<juce::FileChooser> fileChooser;
     double lastLevelUpdatePosition { -1.0 };
+
+    // Playback mode tracking
+    TopInfoBar::PlaybackMode currentPlaybackMode { TopInfoBar::PlaybackMode::SingleFile };
 
     //==========================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)

@@ -15,6 +15,7 @@
 TopInfoBar::TopInfoBar()
 {
     createTransportButtons();
+    createModeButtons();
 
     // Open file button
     openFileButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff3a3a3a));
@@ -168,6 +169,67 @@ void TopInfoBar::updatePlayButtonIcon()
         playButton.setImages(pauseIcon.get());
     else
         playButton.setImages(playIcon.get());
+}
+
+//==============================================================================
+void TopInfoBar::createModeButtons()
+{
+    auto setupModeButton = [this](juce::TextButton& button, PlaybackMode mode, const juce::String& tooltip)
+    {
+        button.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff353535));
+        button.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff0077dd));
+        button.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffaaaaaa));
+        button.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+        button.setClickingTogglesState(false);  // We'll manage state manually
+        button.setTooltip(tooltip);
+        button.onClick = [this, mode]()
+        {
+            setPlaybackMode(mode);
+            if (onPlaybackModeChanged)
+                onPlaybackModeChanged(mode);
+        };
+        addAndMakeVisible(button);
+    };
+
+    setupModeButton(singleFileModeButton, PlaybackMode::SingleFile, "Single File Playback - Play loaded audio file");
+    setupModeButton(multiTrackModeButton, PlaybackMode::MultiTrack, "Multi-Track Project - DAW-style multi-track playback");
+    setupModeButton(abCompareModeButton, PlaybackMode::ABCompare, "A/B Comparison - Compare two audio tracks");
+
+    updateModeButtonStates();
+}
+
+void TopInfoBar::updateModeButtonStates()
+{
+    // Update button appearances based on current mode
+    auto setButtonActive = [](juce::TextButton& button, bool active)
+    {
+        if (active)
+        {
+            button.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff0077dd));
+            button.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+        }
+        else
+        {
+            button.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff353535));
+            button.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffaaaaaa));
+        }
+        button.repaint();
+    };
+
+    setButtonActive(singleFileModeButton, playbackMode == PlaybackMode::SingleFile);
+    setButtonActive(multiTrackModeButton, playbackMode == PlaybackMode::MultiTrack);
+    setButtonActive(abCompareModeButton, playbackMode == PlaybackMode::ABCompare);
+
+    repaint();
+}
+
+void TopInfoBar::setPlaybackMode(PlaybackMode mode)
+{
+    if (playbackMode != mode)
+    {
+        playbackMode = mode;
+        updateModeButtonStates();
+    }
 }
 
 //==============================================================================
@@ -415,14 +477,15 @@ void TopInfoBar::paint(juce::Graphics& g)
     }
 
     // ========================================
-    // CENTER: Transport buttons are placed in resized()
+    // CENTER: Transport buttons + Mode buttons are placed in resized()
     // ========================================
 
     // ========================================
-    // CENTER-RIGHT: LCD Time Display
+    // CENTER-RIGHT: LCD Time Display (after mode buttons)
     // ========================================
-    int transportEndX = fileInfoX + fileInfoWidth + 10 + (28 + 4) * 8 + 20;  // After transport buttons
-    int lcdWidth = 180;
+    // Transport: 8 buttons at (28+4) = 256, Mode: 3 buttons at (52+2) = 162
+    int transportEndX = fileInfoX + fileInfoWidth + 10 + (28 + 4) * 8 + 16 + (52 + 2) * 3 + 20;
+    int lcdWidth = 160;
     auto lcdBounds = juce::Rectangle<int>(transportEndX, sectionY, lcdWidth, sectionHeight);
     drawLCDBackground(g, lcdBounds);
 
@@ -570,11 +633,27 @@ void TopInfoBar::paint(juce::Graphics& g)
     }
 
     // ========================================
+    // MODE SELECTOR Section (after transport buttons)
+    // ========================================
+    // Calculate position after transport controls: after loop button + spacing
+    int modeSectionX = fileInfoX + fileInfoWidth + 10 + (28 + 4) * 8 + 16;
+
+    // Vertical separator line before mode buttons
+    g.setColour(juce::Colour(0xff444444));
+    g.drawLine(static_cast<float>(modeSectionX - 8), static_cast<float>(sectionY + 4),
+               static_cast<float>(modeSectionX - 8), static_cast<float>(sectionY + sectionHeight - 4), 1.0f);
+
+    // "SOURCE" label above buttons
+    g.setFont(getJapaneseFont(8.0f));
+    g.setColour(juce::Colour(0xff666666));
+    g.drawText("SOURCE", modeSectionX, sectionY, 160, 10, juce::Justification::centredLeft, false);
+
+    // ========================================
     // Loop indicator
     // ========================================
     if (loopEnabled)
     {
-        int loopIndicatorX = deviceX - 50;
+        int loopIndicatorX = deviceX - 60;
         g.setColour(juce::Colour(0xff00aa00));
         g.setFont(getJapaneseFont(10.0f, juce::Font::bold));
         g.drawText("LOOP", loopIndicatorX, sectionY + 4, 40, 14, juce::Justification::centred, false);
@@ -644,6 +723,20 @@ void TopInfoBar::resized()
     transportX += buttonSize + 8;
 
     loopButton.setBounds(transportX, transportY, buttonSize, buttonSize);
+    transportX += buttonSize + 16;  // Extra space before mode selector
+
+    // Mode selector buttons (right after transport, prominent position)
+    int modeButtonWidth = 52;
+    int modeButtonHeight = 28;
+    int modeButtonY = (bounds.getHeight() - modeButtonHeight) / 2;
+
+    singleFileModeButton.setBounds(transportX, modeButtonY, modeButtonWidth, modeButtonHeight);
+    transportX += modeButtonWidth + 2;
+
+    multiTrackModeButton.setBounds(transportX, modeButtonY, modeButtonWidth, modeButtonHeight);
+    transportX += modeButtonWidth + 2;
+
+    abCompareModeButton.setBounds(transportX, modeButtonY, modeButtonWidth, modeButtonHeight);
 }
 
 void TopInfoBar::timerCallback()
