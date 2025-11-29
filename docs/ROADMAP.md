@@ -480,6 +480,79 @@
   - [x] Vectorscope最適化（バッファ削減、パスキャッシュ）
   - [x] Histogram最適化（ビン数削減、カラー事前計算）
 
+#### マルチトラックDAW機能 🔄 **進行中**
+
+##### T1: プロジェクトデータモデル ✅
+- [x] T1-1: ValueTreeスキーマ定義（Project/Track/Clip）
+  - [x] ProjectModel.h - IDs名前空間（PROJECT, TRACK, CLIP, MASTER）
+  - [x] ClipModel - クリップ情報（audioFilePath, sourceStart, length, timelineStart, gain, fadeIn/Out）
+  - [x] TrackModel - トラック情報（name, volume, pan, mute, solo, armed, order, color）
+  - [x] ProjectModel - プロジェクト情報（projectName, sampleRate, bpm, timeSignature）
+- [x] T1-2: UndoManager統合
+  - [x] ProjectManager - 全操作にUndoManager連携
+  - [x] beginTransaction/undo/redo対応
+- [x] T1-3: プロジェクト保存/読み込み
+  - [x] XML形式でのシリアライズ
+  - [x] .smproj拡張子
+  - [x] バージョン管理
+
+##### T2: マルチトラック再生エンジン
+- [ ] T2-1: MultiTrackAudioSource基礎
+  - [ ] 複数トラック合成
+  - [ ] トラックボリューム/パン適用
+- [ ] T2-2: クリップミキシング
+  - [ ] 複数クリップの同時再生
+  - [ ] フェードイン/アウト処理
+  - [ ] クリップゲイン適用
+- [ ] T2-3: タイムライン位置同期
+  - [ ] 再生ヘッド位置管理
+  - [ ] シーク機能
+- [ ] T2-4: ミュート/ソロ処理
+  - [ ] トラックミュート
+  - [ ] ソロ排他制御
+
+##### T3: タイムラインUI + クリップ編集
+- [ ] T3-1: TimelinePanel（トラックヘッダ + クリップ領域）
+  - [ ] トラックヘッダ表示（名前、Mute/Solo/Arm）
+  - [ ] クリップ領域描画
+- [ ] T3-2: クリップ波形表示
+  - [ ] AudioThumbnailCache統合
+  - [ ] サムネイル描画
+- [ ] T3-3: ドラッグ移動
+  - [ ] クリップ選択
+  - [ ] ドラッグ＆ドロップ移動
+- [ ] T3-4: トリミングハンドル
+  - [ ] 開始点/終了点調整
+  - [ ] sourceStart連動
+- [ ] T3-5: クリップ分割
+  - [ ] 分割ポイント指定
+  - [ ] 新規クリップ生成
+- [ ] T3-6: スナップ＆グリッド
+  - [ ] ビート/バー単位スナップ
+  - [ ] グリッド表示
+
+##### T4: ミキサーUI + トラックFX
+- [ ] T4-1: MixerPanel（縦フェーダー + パン + Mute/Solo）
+  - [ ] チャンネルストリップ
+  - [ ] フェーダー操作
+- [ ] T4-2: インサートエフェクト
+  - [ ] EffectChain統合
+  - [ ] エフェクト順序管理
+- [ ] T4-3: トラックメーター
+  - [ ] トラック別レベル表示
+  - [ ] マスターメーター
+- [ ] T4-4: オートメーション基礎
+  - [ ] パラメータ記録
+  - [ ] 再生時適用
+
+##### T5: エクスポート & 解析統合
+- [ ] T5-1: マルチトラックレンダリング
+  - [ ] オフラインバウンス
+  - [ ] WAV/FLAC出力
+- [ ] T5-2: トラック別解析
+  - [ ] 既存AnalysisPanel連携
+  - [ ] トラック選択切り替え
+
 ### Webアプリ
 
 #### 自動解析・分類
@@ -655,6 +728,7 @@
 - 測定: THD、THD+N、SNR、SINAD、インパルス応答、周波数応答
 - 信号生成: トーン、ノイズ、スイープジェネレーター
 - プロフェッショナルUI: TopInfoBar（Logic Pro/Pro Tools風）、デュアルトラック比較、マーカー、タイムライン
+- マルチトラックDAW: プロジェクトデータモデル（ValueTree）、UndoManager統合、プロジェクト保存/読み込み
 
 ---
 

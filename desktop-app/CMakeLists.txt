@@ -100,6 +100,10 @@ target_sources(SoundmanDesktop PRIVATE
     Source/Core/PluginManager.cpp
     Source/Core/EffectChain.cpp
 
+    # Core - Multi-track Project Model
+    Source/Core/ProjectModel.cpp
+    Source/Core/ProjectManager.cpp
+
     # Data
     # Source/Data/DataManager.cpp
     # Source/Data/MetadataWriter.cpp
