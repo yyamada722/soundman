@@ -96,6 +96,7 @@ target_sources(SoundmanDesktop PRIVATE
     Source/UI/MarkerPanel.cpp
     Source/UI/TopInfoBar.cpp
     Source/UI/TimelinePanel.cpp
+    Source/UI/MixerPanel.cpp
 
     # Core - Plugin Management
     Source/Core/PluginManager.cpp
