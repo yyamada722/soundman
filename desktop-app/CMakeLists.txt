@@ -103,6 +103,7 @@ target_sources(SoundmanDesktop PRIVATE
     # Core - Multi-track Project Model
     Source/Core/ProjectModel.cpp
     Source/Core/ProjectManager.cpp
+    Source/Core/MultiTrackAudioSource.cpp
 
     # Data
     # Source/Data/DataManager.cpp
