@@ -38,6 +38,10 @@
 #include "UI/AudioTimeline.h"
 #include "UI/MarkerPanel.h"
 #include "UI/TopInfoBar.h"
+#include "UI/TimelinePanel.h"
+#include "UI/MixerPanel.h"
+#include "Core/ProjectManager.h"
+#include "Core/MultiTrackAudioSource.h"
 
 //==============================================================================
 /**
@@ -104,6 +108,9 @@ public:
     {
         // File menu
         fileOpen = 1,
+        fileAddToTrack,
+        fileNewProject,
+        fileAddTrack,
         fileSettings,
         fileExit,
 
@@ -165,6 +172,7 @@ public:
         setupPlaylistPanel();
         setupKeyboardShortcuts();
         setupMenuBar();
+        setupMultiTrackComponents();
 
         // Set window size (professional size)
         setSize(1920, 1080);
@@ -753,6 +761,130 @@ private:
         // This component provides the MenuBarModel implementation
     }
 
+    void setupMultiTrackComponents()
+    {
+        // Create multi-track audio source
+        multiTrackSource = std::make_unique<MultiTrackAudioSource>(audioEngine.getFormatManager());
+
+        // Create timeline panel
+        multiTrackTimeline = std::make_unique<TimelinePanel>(projectManager, audioEngine.getFormatManager());
+
+        // Create mixer panel
+        mixerPanel = std::make_unique<MixerPanel>(projectManager);
+
+        // Add to tabbed display
+        tabbedDisplay.addTab("Multi-Track", multiTrackTimeline.get());
+        tabbedDisplay.addTab("Mixer", mixerPanel.get());
+
+        // Setup callbacks
+        multiTrackTimeline->onPlayheadMoved = [this](juce::int64 samplePos)
+        {
+            multiTrackSource->setNextReadPosition(samplePos);
+        };
+
+        // Create a demo project with tracks
+        createDemoProject();
+    }
+
+    void createDemoProject()
+    {
+        // Create new project
+        projectManager.newProject("Demo Project");
+
+        // Add some demo tracks
+        projectManager.addTrack("Track 1");
+        projectManager.addTrack("Track 2");
+        projectManager.addTrack("Track 3");
+
+        // Load project into multi-track source
+        multiTrackSource->loadProject(projectManager.getProjectState());
+    }
+
+    void addFileToTrack(const juce::File& file, int trackIndex)
+    {
+        auto& project = projectManager.getProject();
+
+        if (trackIndex < 0 || trackIndex >= project.getNumTracks())
+            return;
+
+        auto track = project.getTrack(trackIndex);
+        if (!track.isValid())
+            return;
+
+        // Get file info to determine clip length
+        auto* reader = audioEngine.getFormatManager().createReaderFor(file);
+        if (reader == nullptr)
+            return;
+
+        juce::int64 lengthInSamples = reader->lengthInSamples;
+        delete reader;
+
+        // Find the end of the last clip on this track
+        TrackModel trackModel(track);
+        auto clips = trackModel.getClipsSortedByTime();
+        juce::int64 timelineStart = 0;
+
+        if (!clips.isEmpty())
+        {
+            auto lastClip = clips.getLast();
+            ClipModel lastClipModel(lastClip);
+            timelineStart = lastClipModel.getTimelineEnd();
+        }
+
+        // Add clip to track
+        projectManager.addClip(track, file.getFullPathName(), timelineStart, lengthInSamples);
+
+        // Refresh timeline display
+        if (multiTrackTimeline != nullptr)
+            multiTrackTimeline->projectChanged();
+    }
+
+    void showAddToTrackDialog(const juce::File& file)
+    {
+        auto& project = projectManager.getProject();
+        int numTracks = project.getNumTracks();
+
+        if (numTracks == 0)
+        {
+            juce::AlertWindow::showMessageBoxAsync(
+                juce::AlertWindow::WarningIcon,
+                "No Tracks",
+                "Please create a track first in the Multi-Track tab.",
+                "OK"
+            );
+            return;
+        }
+
+        juce::StringArray trackNames;
+        for (int i = 0; i < numTracks; ++i)
+        {
+            TrackModel track(project.getTrack(i));
+            trackNames.add(track.getName());
+        }
+
+        auto* alertWindow = new juce::AlertWindow(
+            "Add to Track",
+            "Select a track to add \"" + file.getFileName() + "\" to:",
+            juce::AlertWindow::QuestionIcon
+        );
+
+        alertWindow->addComboBox("track", trackNames, "Track");
+        alertWindow->addButton("Add", 1, juce::KeyPress(juce::KeyPress::returnKey));
+        alertWindow->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+
+        alertWindow->enterModalState(true, juce::ModalCallbackFunction::create(
+            [this, file, alertWindow](int result)
+            {
+                if (result == 1)
+                {
+                    int trackIndex = alertWindow->getComboBoxComponent("track")->getSelectedItemIndex();
+                    addFileToTrack(file, trackIndex);
+                }
+                delete alertWindow;
+            }
+        ), true);
+    }
+
     void setupTopInfoBar()
     {
         // Initialize with device info
@@ -988,6 +1120,10 @@ private:
         if (menuIndex == 0)  // File menu
         {
             menu.addItem(fileOpen, "Open Audio File...     Cmd+O");
+            menu.addItem(fileAddToTrack, "Add File to Track...", audioEngine.hasFileLoaded());
+            menu.addSeparator();
+            menu.addItem(fileNewProject, "New Multi-Track Project");
+            menu.addItem(fileAddTrack, "Add Track");
             menu.addSeparator();
             menu.addItem(fileSettings, "Settings...     Cmd+,");
             menu.addSeparator();
@@ -1030,6 +1166,28 @@ private:
         {
             case fileOpen:
                 loadAudioFile();
+                break;
+
+            case fileAddToTrack:
+                if (audioEngine.hasFileLoaded())
+                {
+                    juce::File currentFile = audioEngine.getCurrentFile();
+                    if (currentFile.existsAsFile())
+                        showAddToTrackDialog(currentFile);
+                }
+                break;
+
+            case fileNewProject:
+                projectManager.newProject("New Project");
+                projectManager.addTrack("Track 1");
+                multiTrackSource->loadProject(projectManager.getProjectState());
+                break;
+
+            case fileAddTrack:
+                {
+                    int trackNum = projectManager.getProject().getNumTracks() + 1;
+                    projectManager.addTrack("Track " + juce::String(trackNum));
+                }
                 break;
 
             case fileSettings:
@@ -1180,6 +1338,12 @@ private:
     PluginHostPanel pluginHostPanel;   // VST3 Plugin Host
     TrackComparePanel trackComparePanel; // Dual track comparison
     AudioTimeline audioTimeline;          // Professional audio timeline
+
+    // Multi-track DAW components
+    ProjectManager projectManager;
+    std::unique_ptr<TimelinePanel> multiTrackTimeline;
+    std::unique_ptr<MixerPanel> mixerPanel;
+    std::unique_ptr<MultiTrackAudioSource> multiTrackSource;
 
     MultiViewContainer multiViewContainer;
     ABCompareControl abCompareControl;
